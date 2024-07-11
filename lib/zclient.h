@@ -222,6 +222,9 @@ typedef enum {
 	ZEBRA_SRV6_LOCATOR_DELETE,
 	ZEBRA_SRV6_MANAGER_GET_LOCATOR_CHUNK,
 	ZEBRA_SRV6_MANAGER_RELEASE_LOCATOR_CHUNK,
+	ZEBRA_SRV6_MANAGER_GET_LOCATOR_SID,
+	ZEBRA_SRV6_MANAGER_RELEASE_LOCATOR_SID,
+	ZEBRA_SRV6_MANAGER_GET_LOCATOR_ALL,
 	ZEBRA_ERROR,
 	ZEBRA_CLIENT_CAPABILITIES,
 	ZEBRA_OPAQUE_MESSAGE,
@@ -1036,6 +1039,9 @@ extern struct interface *zebra_interface_link_params_read(struct stream *s,
 							  bool *changed);
 extern size_t zebra_interface_link_params_write(struct stream *,
 						struct interface *);
+
+extern int zapi_srv6_locator_sid_encode(struct stream *s,
+					struct srv6_locator *loc);
 extern enum zclient_send_status
 zclient_send_get_label_chunk(struct zclient *zclient, uint8_t keep,
 			     uint32_t chunk_size, uint32_t base);

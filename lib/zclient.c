@@ -1124,6 +1124,10 @@ int zapi_srv6_locator_encode(struct stream *s, const struct srv6_locator *l)
 	stream_put(s, l->name, strlen(l->name));
 	stream_putw(s, l->prefix.prefixlen);
 	stream_put(s, &l->prefix.prefix, sizeof(l->prefix.prefix));
+	stream_putc(s, l->block_bits_length);
+	stream_putc(s, l->node_bits_length);
+	stream_putc(s, l->function_bits_length);
+	stream_putc(s, l->argument_bits_length);
 	return 0;
 }
 
@@ -1139,10 +1143,42 @@ int zapi_srv6_locator_decode(struct stream *s, struct srv6_locator *l)
 	STREAM_GETW(s, l->prefix.prefixlen);
 	STREAM_GET(&l->prefix.prefix, s, sizeof(l->prefix.prefix));
 	l->prefix.family = AF_INET6;
+	STREAM_GETC(s, l->block_bits_length);
+	STREAM_GETC(s, l->node_bits_length);
+	STREAM_GETC(s, l->function_bits_length);
+	STREAM_GETC(s, l->argument_bits_length);
 	return 0;
 
 stream_failure:
 	return -1;
+}
+
+int zapi_srv6_locator_sid_encode(struct stream *s, struct srv6_locator *loc)
+{
+	struct seg6_sid *sidtmp = NULL;
+	struct listnode *node = NULL;
+
+	stream_putw(s, strlen(loc->name));
+	stream_put(s, loc->name, strlen(loc->name));
+
+	stream_putw(s, loc->prefix.prefixlen);
+	stream_put(s, &loc->prefix.prefix, sizeof(loc->prefix.prefix));
+	stream_putc(s, loc->block_bits_length);
+	stream_putc(s, loc->node_bits_length);
+	stream_putc(s, loc->function_bits_length);
+	stream_putc(s, loc->argument_bits_length);
+
+	stream_putl(s, loc->sids->count);
+	for (ALL_LIST_ELEMENTS_RO(loc->sids, node, sidtmp)) {
+		stream_putw(s, sidtmp->ipv6Addr.prefixlen);
+		stream_put(s, &sidtmp->ipv6Addr.prefix,
+			   sizeof(sidtmp->ipv6Addr.prefix));
+		stream_putl(s, sidtmp->sidaction);
+		stream_putw(s, strlen(sidtmp->vrfName));
+		stream_put(s, sidtmp->vrfName, strlen(sidtmp->vrfName));
+	}
+
+	return 0;
 }
 
 static int zapi_nhg_encode(struct stream *s, int cmd, struct zapi_nhg *api_nhg)
