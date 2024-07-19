@@ -153,6 +153,39 @@ void zebra_srv6_locator_add(struct srv6_locator *locator)
 		zsend_zebra_srv6_locator_add(client, locator);
 }
 
+void zebra_srv6_prefix_delete(struct srv6_locator *locator)
+{
+	struct listnode *n, *nnode;
+	struct srv6_locator_chunk *c;
+	struct zebra_srv6 *srv6 = zebra_srv6_get_default();
+	struct seg6_sid *sid = NULL;
+	struct zserv *client;
+	struct listnode *client_node;
+
+	for (ALL_LIST_ELEMENTS(locator->sids, n, nnode, sid)) {
+		for (ALL_LIST_ELEMENTS_RO(zrouter.client_list, client_node,
+					  client)) {
+
+			zsend_srv6_manager_del_sid(client, VRF_DEFAULT, locator,
+						   sid);
+		}
+		zebra_srv6_local_sid_del(locator, sid);
+		listnode_delete(locator->sids, sid);
+		srv6_locator_sid_free(sid);
+	}
+
+	memset(&locator->prefix, 0, sizeof(struct prefix_ipv6));
+	locator->block_bits_length = 0;
+	locator->node_bits_length = 0;
+	locator->function_bits_length = 0;
+	locator->argument_bits_length = 0;
+
+	for (ALL_LIST_ELEMENTS_RO(zrouter.client_list, client_node, client))
+		zsend_zebra_srv6_locator_delete(client, locator);
+
+	locator->status_up = false;
+}
+
 void zebra_srv6_locator_delete(struct srv6_locator *locator)
 {
 	struct listnode *n, *nnode;
@@ -173,34 +206,12 @@ void zebra_srv6_locator_delete(struct srv6_locator *locator)
 		listnode_delete(locator->sids, sid);
 		srv6_locator_sid_free(sid);
 	}
-	/*
-	 * Notify deleted locator info to zclients if needed.
-	 *
-	 * zclient(bgpd,isisd,etc) allocates a sid from srv6 locator chunk and
-	 * uses it for its own purpose. For example, in the case of BGP L3VPN,
-	 * the SID assigned to vpn unicast rib will be given.
-	 * And when the locator is deleted by zserv(zebra), those SIDs need to
-	 * be withdrawn. The zclient must initiate the withdrawal of the SIDs
-	 * by ZEBRA_SRV6_LOCATOR_DELETE, and this notification is sent to the
-	 * owner of each chunk.
-	 */
-	// for (ALL_LIST_ELEMENTS_RO((struct list *)locator->chunks, n, c)) {
-	// 	if (c->proto == ZEBRA_ROUTE_SYSTEM)
-	// 		continue;
-	// 	client = zserv_find_client(c->proto, c->instance);
-	// 	if (!client) {
-	// 		zlog_warn(
-	// 			"%s: Not found zclient(proto=%u, instance=%u).",
-	// 			__func__, c->proto, c->instance);
-	// 		continue;
-	// 	}
-	// 	zsend_zebra_srv6_locator_delete(client, locator);
-	// }
+
 	for (ALL_LIST_ELEMENTS_RO(zrouter.client_list, client_node, client))
 		zsend_zebra_srv6_locator_delete(client, locator);
 
 	listnode_delete(srv6->locators, locator);
-	// srv6_locator_free(locator);
+	srv6_locator_free(locator);
 }
 
 
@@ -439,6 +450,7 @@ void zebra_srv6_local_sid_add(struct srv6_locator *locator,
 	struct seg6local_context ctx = {};
 	struct in6_addr result_sid = {0};
 	struct vrf *vrf;
+	struct zebra_vrf *zvrf;
 
 	combine_sid(locator, &sid->ipv6Addr.prefix, &result_sid);
 
@@ -446,13 +458,14 @@ void zebra_srv6_local_sid_add(struct srv6_locator *locator,
 	if (!vrf)
 		return;
 
-	ctx.table = vrf->data.l.table_id;
+	zvrf = vrf->info;
+	ctx.table = zvrf->table_id;
 	act = sid->sidaction;
 	ctx.block_bits_length = locator->block_bits_length;
 	ctx.node_bits_length = locator->node_bits_length;
 	ctx.function_bits_length = locator->function_bits_length;
 	ctx.argument_bits_length = locator->argument_bits_length;
-	strncpy(ctx.vrfName, sid->vrfName, VRF_ALIASNAMESIZ + 1);
+	strncpy(ctx.vrfName, sid->vrfName, VRF_NAMSIZ + 1);
 
 	if (CHECK_FLAG(vrf->status, VRF_ACTIVE)) {
 		zebra_route_add(&result_sid, vrf, act, &ctx);
@@ -466,6 +479,7 @@ void zebra_srv6_local_sid_del(struct srv6_locator *locator,
 	struct seg6local_context ctx = {};
 	struct in6_addr result_sid = {0};
 	struct vrf *vrf;
+	struct zebra_vrf *zvrf;
 
 	combine_sid(locator, &sid->ipv6Addr.prefix, &result_sid);
 
@@ -473,7 +487,8 @@ void zebra_srv6_local_sid_del(struct srv6_locator *locator,
 	if (!vrf)
 		return;
 
-	ctx.table = vrf->data.l.table_id;
+	zvrf = vrf->info;
+	ctx.table = zvrf->table_id;
 	ctx.block_bits_length = locator->block_bits_length;
 	ctx.node_bits_length = locator->node_bits_length;
 	ctx.function_bits_length = locator->function_bits_length;
@@ -839,4 +854,27 @@ bool zebra_srv6_is_enable(void)
 	struct zebra_srv6 *srv6 = zebra_srv6_get_default();
 
 	return listcount(srv6->locators);
+}
+
+int zebra_srv6_vrf_enable(struct zebra_vrf *zvrf)
+{
+	struct zebra_srv6 *srv6 = zebra_srv6_get_default();
+	struct listnode *node, *opcodenode;
+	struct srv6_locator *locator;
+	struct seg6_sid *sid;
+	struct vrf *vrf;
+
+	for (ALL_LIST_ELEMENTS_RO(srv6->locators, node, locator)) {
+		for (ALL_LIST_ELEMENTS_RO(locator->sids, opcodenode, sid)) {
+			if (sid->vrfName == NULL)
+				continue;
+			vrf = vrf_lookup_by_name(sid->vrfName);
+			if (zvrf->vrf != vrf)
+				continue;
+			if (CHECK_FLAG(vrf->status, VRF_ACTIVE)) {
+				zebra_srv6_local_sid_add(locator, sid);
+			}
+		}
+	}
+	return 0;
 }

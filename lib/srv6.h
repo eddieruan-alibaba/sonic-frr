@@ -77,7 +77,7 @@ struct seg6local_context {
 	uint8_t node_bits_length;
 	uint8_t function_bits_length;
 	uint8_t argument_bits_length;
-	char vrfName[VRF_ALIASNAMESIZ + 1];
+	char vrfName[VRF_NAMSIZ + 1];
 };
 
 enum srv6_format {
@@ -139,7 +139,7 @@ struct srv6_locator_chunk {
 
 struct seg6_sid {
 	enum seg6local_action_t sidaction;
-	char vrfName[VRF_ALIASNAMESIZ + 1];
+	char vrfName[VRF_NAMSIZ + 1];
 	struct prefix_ipv6 ipv6Addr;
 	char sidstr[PREFIX_STRLEN];
 	char ifname[INTERFACE_NAMSIZ];
@@ -148,7 +148,7 @@ struct seg6_sid {
 struct seg6_sid_msg {
 	char locator_name[SRV6_LOCNAME_SIZE];
 	enum seg6local_action_t sidaction;
-	char vrfName[VRF_ALIASNAMESIZ + 1];
+	char vrfName[VRF_NAMSIZ + 1];
 	struct prefix_ipv6 ipv6Addr;
 };
 
