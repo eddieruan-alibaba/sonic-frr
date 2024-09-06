@@ -1145,6 +1145,85 @@ stream_failure:
 	return -1;
 }
 
+int zapi_srv6_locator_sid_decode(struct stream *s,
+				   struct list *sidlist)
+{
+    struct seg6_sid *sid = NULL;
+    struct listnode *node, *nnode;
+    unsigned int sid_count;
+    unsigned int vrf_name_len;
+    
+    STREAM_GETL(s, sid_count);
+    for (ALL_LIST_ELEMENTS(sidlist, node, nnode, sid)) {
+        if (sid_count == 0)
+        {
+            /*free the other sid*/
+            list_delete_node(sidlist, node);
+            srv6_locator_sid_free(sid);
+            continue;
+        }
+        STREAM_GETW(s, sid->ipv6Addr.prefixlen);
+        STREAM_GET(&sid->ipv6Addr.prefix, s, sizeof(sid->ipv6Addr.prefix));
+		sid->ipv6Addr.family = AF_INET6;
+        STREAM_GETL(s, sid->sidaction);
+        STREAM_GETW(s, vrf_name_len);
+        STREAM_GET(&sid->vrfName, s, vrf_name_len);
+        sid->vrfName[vrf_name_len] = '\0';
+        sid_count--;
+    }
+    while (sid_count > 0)
+    {
+        sid = srv6_locator_sid_alloc();
+        STREAM_GETW(s, sid->ipv6Addr.prefixlen);
+        STREAM_GET(&sid->ipv6Addr.prefix, s, sizeof(sid->ipv6Addr.prefix));
+        sid->ipv6Addr.family = AF_INET6;
+        STREAM_GETL(s, sid->sidaction);
+        STREAM_GETW(s, vrf_name_len);
+        STREAM_GET(&sid->vrfName, s, vrf_name_len);
+        sid->vrfName[vrf_name_len] = '\0';
+        listnode_add(sidlist, sid);
+        sid_count--;
+    }
+	return 0;
+
+stream_failure:
+	return -1;
+}
+
+int zapi_srv6_del_sid_decode(struct stream *s,
+				   struct list *sidlist)
+{
+    struct seg6_sid *sid = NULL;
+    struct seg6_sid tmpsid = {0};
+    struct listnode *node, *nnode;
+    unsigned int sid_count;
+    unsigned int vrf_name_len;
+    
+    STREAM_GETL(s, sid_count);
+    
+    while (sid_count > 0)
+    {
+        STREAM_GETW(s, tmpsid.ipv6Addr.prefixlen);
+        STREAM_GET(&tmpsid.ipv6Addr.prefix, s, sizeof(sid->ipv6Addr.prefix));
+        STREAM_GETL(s, tmpsid.sidaction);
+        STREAM_GETW(s, vrf_name_len);
+        STREAM_GET(&tmpsid.vrfName, s, vrf_name_len);
+        tmpsid.vrfName[vrf_name_len] = '\0';
+        for (ALL_LIST_ELEMENTS(sidlist, node, nnode, sid)) {
+            if (prefix_match((struct prefix *)(&tmpsid.ipv6Addr), (struct prefix *)(&sid->ipv6Addr))){
+                list_delete_node(sidlist, node);
+                srv6_locator_sid_free(sid);
+                break;
+            }
+        }
+        sid_count--;
+    }
+    return 0;
+
+stream_failure:
+	return -1;
+}
+
 static int zapi_nhg_encode(struct stream *s, int cmd, struct zapi_nhg *api_nhg)
 {
 	int i;
@@ -3009,6 +3088,34 @@ int srv6_manager_release_locator_chunk(struct zclient *zclient,
 	s = zclient->obuf;
 	stream_reset(s);
 	zclient_create_header(s, ZEBRA_SRV6_MANAGER_RELEASE_LOCATOR_CHUNK,
+			      VRF_DEFAULT);
+
+	/* locator_name */
+	stream_putw(s, len);
+	stream_put(s, locator_name, len);
+
+	/* Put length at the first point of the stream. */
+	stream_putw_at(s, 0, stream_get_endp(s));
+
+	return zclient_send_message(zclient);
+}
+
+int srv6_manager_get_locator_sid(struct zclient *zclient,
+				   const char *locator_name)
+{
+	struct stream *s;
+	const size_t len = strlen(locator_name);
+
+	if (zclient_debug)
+		zlog_debug("Getting SRv6-Locator sid %s", locator_name);
+
+	if (zclient->sock < 0)
+		return -1;
+
+	/* send request */
+	s = zclient->obuf;
+	stream_reset(s);
+	zclient_create_header(s, ZEBRA_SRV6_MANAGER_GET_LOCATOR_SID,
 			      VRF_DEFAULT);
 
 	/* locator_name */

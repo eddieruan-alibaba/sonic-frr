@@ -1335,12 +1335,97 @@ int bgp_peer_gr_init(struct peer *peer)
 	return BGP_GR_SUCCESS;
 }
 
+static unsigned int locator_hash_key_make(const void *p)
+{
+	const struct srv6_locator *loc = p;
+	return string_hash_make(loc->name);
+}
+
+static bool locator_hash_same(const void *p1, const void *p2)
+{
+	const struct srv6_locator *loc1 = p1;
+	const struct srv6_locator *loc2 = p2;
+
+	if (!strcmp(loc1->name, loc2->name)) {
+		return true;
+	}
+
+	return false;
+}
+
+struct srv6_locator *locator_lookup_by_name(struct hash *hash, const char *name)
+{
+	struct srv6_locator *loc;
+	struct srv6_locator tmp_loc = {0};
+
+	if (!name)
+		return NULL;
+
+    strncpy(tmp_loc.name, name, SRV6_LOCNAME_SIZE);
+	loc = hash_lookup(hash, &tmp_loc);
+	return loc;
+}
+
+static bool sidaction_check(enum seg6local_action_t action, afi_t afi)
+{
+	if (afi != AFI_IP && afi != AFI_IP6)
+		return false;
+
+	switch (action) {
+	case ZEBRA_SEG6_LOCAL_ACTION_END:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_X:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_T:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DX2:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DX6:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DX4:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_B6:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_B6_ENCAP:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_BM:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_S:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_AS:
+	case ZEBRA_SEG6_LOCAL_ACTION_END_AM:
+		return false;
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DT46:
+		return true;
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DT4:
+		if (afi == AFI_IP)
+			return true;
+		break;
+	case ZEBRA_SEG6_LOCAL_ACTION_END_DT6:
+		if (afi == AFI_IP6)
+			return true;
+		break;
+	default:
+		return false;
+	}
+	return false;
+}
+
+struct seg6_sid *sid_lookup_by_vrf(void *p, const char *vrfname, afi_t afi)
+{
+    struct srv6_locator *loc = (struct srv6_locator *)p;
+    struct seg6_sid *sid = NULL;
+    struct listnode *node, *nnode;
+
+	if (!vrfname)
+		return NULL;
+
+    for (ALL_LIST_ELEMENTS(loc->sids, node, nnode, sid)) {
+        if (strcmp(sid->vrfName, vrfname) == 0 && sidaction_check(sid->sidaction, afi))
+            return sid;
+    }
+    return NULL;
+}
+
 static void bgp_srv6_init(struct bgp *bgp)
 {
 	bgp->srv6_enabled = false;
 	memset(bgp->srv6_locator_name, 0, sizeof(bgp->srv6_locator_name));
 	bgp->srv6_locator_chunks = list_new();
 	bgp->srv6_functions = list_new();
+	bgp->srv6_locators = list_new();
+	bgp->srv6_locators_hash = hash_create(locator_hash_key_make, locator_hash_same,
+				    "BGP Srv6 locators Hash");
 }
 
 static void bgp_srv6_cleanup(struct bgp *bgp)

@@ -734,6 +734,7 @@ struct bgp {
 #define BGP_VRF_L3VNI_PREFIX_ROUTES_ONLY    (1 << 6)
 /* per-VRF toVPN SID */
 #define BGP_VRF_TOVPN_SID_AUTO              (1 << 7)
+#define BGP_VRF_TOVPN_SID_EXPLICIT          (1 << 8)
 
 	/* unique ID for auto derivation of RD for this vrf */
 	uint16_t vrf_rd_id;
@@ -784,8 +785,11 @@ struct bgp {
 	uint32_t tovpn_sid_index; /* unset => set to 0 */
 	struct in6_addr *tovpn_sid;
 	struct srv6_locator_chunk *tovpn_sid_locator;
+	struct srv6_locator *tovpn_sid_locator_ex;
 	uint32_t tovpn_sid_transpose_label;
 	struct in6_addr *tovpn_zebra_vrf_sid_last_sent;
+	struct list *srv6_locators;
+    struct hash *srv6_locators_hash;
 
 	/* TCP keepalive parameters for BGP connection */
 	uint16_t tcp_keepalive_idle;
@@ -2595,6 +2599,8 @@ extern struct peer *peer_lookup_in_view(struct vty *vty, struct bgp *bgp,
 extern int bgp_lookup_by_as_name_type(struct bgp **bgp_val, as_t *as,
 				      const char *name,
 				      enum bgp_instance_type inst_type);
+extern struct srv6_locator *locator_lookup_by_name(struct hash *hash, const char *name);
+extern struct seg6_sid *sid_lookup_by_vrf(void *loc, const char *vrfname, afi_t afi);
 
 /* Hooks */
 DECLARE_HOOK(bgp_vrf_status_changed, (struct bgp *bgp, struct interface *ifp),
