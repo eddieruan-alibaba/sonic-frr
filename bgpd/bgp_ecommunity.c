@@ -264,6 +264,8 @@ struct ecommunity *ecommunity_dup(struct ecommunity *ecom)
 {
 	struct ecommunity *new;
 
+	if (NULL == ecom)
+		return NULL;
 	new = XCALLOC(MTYPE_ECOMMUNITY, sizeof(struct ecommunity));
 	new->size = ecom->size;
 	new->unit_size = ecom->unit_size;
@@ -370,6 +372,26 @@ bool ecommunity_cmp(const void *arg1, const void *arg2)
 			  ecom1->unit_size) == 0);
 }
 
+static void ecommunity_color_str(char *buf, size_t bufsz, uint8_t *ptr)
+{
+	/*
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 *  | 0x03         | Sub-Type(0x0b) |    Flags                      |
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 *  |                          Color Value                          |
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 */
+	uint32_t colorid;
+	uint8_t color_type;
+	/* get the color type */
+	ptr++;
+	color_type = (*ptr) >> 6;
+
+	memcpy(&colorid, ptr + 2, 4);
+	colorid = ntohl(colorid);
+	snprintf(buf, bufsz, "Color:%d%d:%d", 
+		(color_type & 0x2) >> 1, color_type & 0x1, colorid);
+}
 /* Initialize Extended Comminities related hash. */
 void ecommunity_init(void)
 {
@@ -389,6 +411,7 @@ enum ecommunity_token {
 	ecommunity_token_unknown = 0,
 	ecommunity_token_rt,
 	ecommunity_token_soo,
+	ecommunity_token_color,
 	ecommunity_token_val,
 	ecommunity_token_rt6,
 	ecommunity_token_val6,
@@ -478,6 +501,9 @@ static int ecommunity_encode_internal(uint8_t type, uint8_t sub_type,
 		memcpy(&eval6->val[2], ip6, sizeof(struct in6_addr));
 		eval6->val[18] = (val >> 8) & 0xff;
 		eval6->val[19] = val & 0xff;
+	} else if (type == ECOMMUNITY_ENCODE_OPAQUE &&
+		   sub_type == ECOMMUNITY_COLOR) {
+		encode_color(val, as, eval);
 	} else {
 		eval->val[2] = (as >> 24) & 0xff;
 		eval->val[3] = (as >> 16) & 0xff;
@@ -503,9 +529,8 @@ static int ecommunity_encode(uint8_t type, uint8_t sub_type, int trans, as_t as,
 }
 
 /* Get next Extended Communities token from the string. */
-static const char *ecommunity_gettoken(const char *str,
-				       void *eval_ptr,
-				       enum ecommunity_token *token)
+static const char *ecommunity_gettoken(const char *str, void *eval_ptr,
+				       enum ecommunity_token *token, int type)
 {
 	int ret;
 	int dot = 0;
@@ -517,10 +542,14 @@ static const char *ecommunity_gettoken(const char *str,
 	struct in6_addr ip6;
 	as_t as = 0;
 	uint32_t val = 0;
-	uint8_t ecomm_type;
+	uint32_t val_color = 0;
+	uint8_t ecomm_type = 0;
+	uint8_t sub_type = 0;
 	char buf[INET_ADDRSTRLEN + 1];
 	struct ecommunity_val *eval = (struct ecommunity_val *)eval_ptr;
-	uint64_t tmp_as = 0;
+	static const char str_color[5] = "color";
+	const char *ptr_color;
+	bool val_color_set = false;
 
 	/* Skip white space. */
 	while (isspace((unsigned char)*p)) {
@@ -532,7 +561,7 @@ static const char *ecommunity_gettoken(const char *str,
 	if (*p == '\0')
 		return NULL;
 
-	/* "rt" and "soo" keyword parse. */
+	/* "rt", "nt", "soo", and "color" keyword parse. */
 	if (!isdigit((unsigned char)*p)) {
 		/* "rt" match check.  */
 		if (tolower((unsigned char)*p) == 'r') {
@@ -573,9 +602,23 @@ static const char *ecommunity_gettoken(const char *str,
 			}
 			goto error;
 		}
+		if (tolower((unsigned char)*p) == 'c') {
+			ptr_color = &str_color[0];
+			for (unsigned int i = 0; i < 5; i++) {
+				if (tolower((unsigned char)*p) != *ptr_color)
+					break;
+
+				p++;
+				ptr_color++;
+			}
+			if (isspace((unsigned char)*p) || *p == '\0') {
+				*token = ecommunity_token_color;
+				return p;
+			}
+			goto error;
+		}
 		goto error;
 	}
-
 	/* What a mess, there are several possibilities:
 	 *
 	 * a) A.B.C.D:MN
@@ -600,18 +643,9 @@ static const char *ecommunity_gettoken(const char *str,
 			goto error;
 
 		endptr++;
-		errno = 0;
-		tmp_as = strtoul(endptr, &endptr, 10);
-		/* 'unsigned long' is a uint64 on 64-bit
-		 * systems, and uint32 on 32-bit systems. So for
-		 * 64-bit we can just directly check the value
-		 * against BGP_AS4_MAX/UINT32_MAX, and for
-		 * 32-bit we can check for errno (set to ERANGE
-		 * upon overflow).
-		 */
-		if (*endptr != '\0' || tmp_as == BGP_AS4_MAX || errno)
+		as = strtoul(endptr, &endptr, 10);
+		if (*endptr != '\0' || as == BGP_AS4_MAX)
 			goto error;
-		as = (as_t)tmp_as;
 
 		memcpy(buf, p, (limit - p));
 		buf[limit - p] = '\0';
@@ -651,21 +685,20 @@ static const char *ecommunity_gettoken(const char *str,
 				ret = inet_aton(buf, &ip);
 				if (ret == 0)
 					goto error;
+			} else if (type == ECOMMUNITY_COLOR) {
+				/* If extcommunity is color, only support 00/01/10/11, max value is 3 */
+				/* color value */
+				as = strtoul(buf, &endptr, 2);
+				if (*endptr != '\0' || as > 3)
+					goto error;
+				val_color = 0;
 			} else {
 				/* ASN */
-				errno = 0;
-				tmp_as = strtoul(buf, &endptr, 10);
-				/* 'unsigned long' is a uint64 on 64-bit
-				 * systems, and uint32 on 32-bit systems. So for
-				 * 64-bit we can just directly check the value
-				 * against BGP_AS4_MAX/UINT32_MAX, and for
-				 * 32-bit we can check for errno (set to ERANGE
-				 * upon overflow).
-				 */
-				if (*endptr != '\0' || tmp_as > BGP_AS4_MAX ||
-				    errno)
+				as = strtoul(buf, &endptr, 10);
+				if (*endptr != '\0' || as == BGP_AS4_MAX)
 					goto error;
-				as = (as_t)tmp_as;
+				if (*token == ecommunity_token_color && as > 3)
+					goto error;
 			}
 		} else if (*p == '.') {
 			if (separator)
@@ -676,17 +709,24 @@ static const char *ecommunity_gettoken(const char *str,
 		} else {
 			digit = 1;
 
-			/* We're past the IP/ASN part */
+			/* We're past the IP/ASN part,
+			 * or we have a color
+			 */
 			if (separator) {
 				val *= 10;
 				val += (*p - '0');
+				val_color_set = false;
+			} else {
+				val_color *= 10;
+				val_color += (*p - '0');
+				val_color_set = true;
 			}
 		}
 		p++;
 	}
 
 	/* Low digit part must be there. */
-	if (!digit || !separator)
+	if (!digit && (!separator || !val_color_set))
 		goto error;
 
 	/* Encode result into extended community.  */
@@ -694,9 +734,17 @@ static const char *ecommunity_gettoken(const char *str,
 		ecomm_type = ECOMMUNITY_ENCODE_IP;
 	else if (as > BGP_AS_MAX)
 		ecomm_type = ECOMMUNITY_ENCODE_AS4;
-	else
+	if (type == ECOMMUNITY_COLOR) {
+		ecomm_type = ECOMMUNITY_ENCODE_OPAQUE;
+		sub_type = ECOMMUNITY_COLOR;
+		if (val_color) {
+			val = val_color;
+			as = 1;
+		}
+	}
+	else if (as > 0)
 		ecomm_type = ECOMMUNITY_ENCODE_AS;
-	if (ecommunity_encode(ecomm_type, 0, 1, as, ip, val, eval))
+	if (ecommunity_encode(ecomm_type, sub_type, 1, as, ip, val, eval))
 		goto error;
 	*token = ecommunity_token_val;
 	return p;
@@ -717,11 +765,12 @@ static struct ecommunity *ecommunity_str2com_internal(const char *str, int type,
 
 	if (is_ipv6_extcomm)
 		token = ecommunity_token_rt6;
-	while ((str = ecommunity_gettoken(str, (void *)&eval, &token))) {
+	while ((str = ecommunity_gettoken(str, (void *)&eval, &token, type))) {
 		switch (token) {
 		case ecommunity_token_rt:
 		case ecommunity_token_rt6:
 		case ecommunity_token_soo:
+		case ecommunity_token_color:
 			if (!keyword_included || keyword) {
 				if (ecom)
 					ecommunity_free(&ecom);
@@ -730,8 +779,10 @@ static struct ecommunity *ecommunity_str2com_internal(const char *str, int type,
 			keyword = 1;
 
 			if (token == ecommunity_token_rt ||
-			    token == ecommunity_token_rt6) {
+			    token == ecommunity_token_rt6)
 				type = ECOMMUNITY_ROUTE_TARGET;
+			if (token == ecommunity_token_color) {
+				type = ECOMMUNITY_COLOR;
 			}
 			if (token == ecommunity_token_soo) {
 				type = ECOMMUNITY_SITE_ORIGIN;
@@ -748,6 +799,9 @@ static struct ecommunity *ecommunity_str2com_internal(const char *str, int type,
 			if (ecom == NULL)
 				ecom = ecommunity_new();
 			eval.val[1] = type;
+			if (type == ECOMMUNITY_COLOR) {
+				eval.val[0] = ECOMMUNITY_ENCODE_OPAQUE;
+			}
 			ecommunity_add_val_internal(ecom, (void *)&eval,
 						    false, false,
 						    ecom->unit_size);
@@ -768,6 +822,7 @@ static struct ecommunity *ecommunity_str2com_internal(const char *str, int type,
 						    ecom->unit_size);
 			break;
 		case ecommunity_token_unknown:
+		default:
 			if (ecom)
 				ecommunity_free(&ecom);
 			return NULL;
@@ -954,10 +1009,12 @@ static int ecommunity_lb_str(char *buf, size_t bufsz, const uint8_t *pnt,
 	"rt 100:1 100:2soo 100:3"
 
    extcommunity-list
-	"rt 100:1 rt 100:2 soo 100:3show [ip] bgp" and extcommunity-list regular expression matching
+	"rt 100:1 rt 100:2 soo 100:3
+	show [ip] bgp"
+   and extcommunity-list regular expression matching
 	"RT:100:1 RT:100:2 SoO:100:3"
 
-   For each formath please use below definition for format:
+   For each format please use below definition for format:
 
    ECOMMUNITY_FORMAT_ROUTE_MAP
    ECOMMUNITY_FORMAT_COMMUNITY_LIST
@@ -1037,6 +1094,9 @@ char *ecommunity_ecom2str(struct ecommunity *ecom, int format, int filter)
 			} else if (*pnt == ECOMMUNITY_EVPN_SUBTYPE_DEF_GW) {
 				strlcpy(encbuf, "Default Gateway",
 					sizeof(encbuf));
+			} else if (*pnt == ECOMMUNITY_COLOR) {
+				ecommunity_color_str(encbuf, sizeof(encbuf),
+						     pnt);
 			} else {
 				unk_ecom = 1;
 			}
@@ -1224,7 +1284,14 @@ char *ecommunity_ecom2str(struct ecommunity *ecom, int format, int filter)
 			if (sub_type == ECOMMUNITY_LINK_BANDWIDTH)
 				ecommunity_lb_str(encbuf, sizeof(encbuf), pnt,
 						  ecom->disable_ieee_floating);
-			else
+			else if (sub_type == ECOMMUNITY_OPAQUE_SUBTYPE_COLOR) {
+				uint32_t color;
+				uint8_t color_type = (*pnt) >> 6;
+                memcpy(&color, pnt + 2, 4);
+				color = ntohl(color);
+				snprintf(encbuf, sizeof(encbuf), "Color:%d%d:%u",
+					 (color_type & 0x2) >> 1, color_type & 0x1, color);
+			} else
 				unk_ecom = 1;
 		} else if (type == ECOMMUNITY_ENCODE_OPAQUE_NON_TRANS) {
 			sub_type = *pnt++;

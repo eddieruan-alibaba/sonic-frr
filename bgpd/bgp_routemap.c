@@ -2826,6 +2826,44 @@ static const struct route_map_rule_cmd route_set_ecommunity_soo_cmd = {
 	route_set_ecommunity_free,
 };
 
+void ecommunity_select_color(struct ecommunity *ecom, uint32_t *color, uint8_t *srte_color_flag, 
+											uint32_t *backup_color, uint8_t *srte_color_backup_flag)
+{
+	uint32_t aux_color = 0;
+	uint32_t sla_color = 0;
+	uint32_t pri_color = 0;
+	uint8_t *p;
+	uint32_t c = 0;
+	uint8_t sla_color_flag = 0;
+	uint8_t pri_color_flag = 0;
+
+	*backup_color = 0;
+
+	if (!ecom || !ecom->size)
+		return;
+	/* If the value already exists in the structure return 0.  */
+	for (p = ecom->val; c < ecom->size; p += ecom->unit_size, c++) {
+		if (p == NULL)
+			break;
+		if (p[0] == ECOMMUNITY_ENCODE_OPAQUE &&
+		    p[1] == ECOMMUNITY_OPAQUE_SUBTYPE_COLOR) {
+			ptr_get_be32((const uint8_t *)&p[4], &aux_color);
+			if (aux_color > pri_color) {
+				sla_color = pri_color;
+				sla_color_flag = pri_color_flag;
+				pri_color = aux_color;
+				pri_color_flag = p[2] >> 6;
+			}
+		}
+	}
+	*color = pri_color;
+	*srte_color_flag = pri_color_flag;
+	*backup_color = sla_color;
+	*srte_color_backup_flag = sla_color_flag;
+	return;
+}
+
+
 /* `set extcommunity bandwidth' */
 
 struct rmap_ecomm_lb_set {
@@ -2950,6 +2988,34 @@ static void *route_set_ecommunity_lb_compile(const char *arg)
 
 	return rels;
 }
+static enum route_map_cmd_result_t
+route_set_ecommunity_color(void *rule, const struct prefix *prefix,
+			   void *object)
+{
+	struct bgp_path_info *path;
+	path = object;
+	route_set_ecommunity(rule, prefix, object);
+	path->attr->flag |= ATTR_FLAG_BIT(BGP_ATTR_SRTE_COLOR);
+	return RMAP_OKAY;
+}
+static void *route_set_ecommunity_color_compile(const char *arg)
+{
+	struct rmap_ecom_set *rcs;
+	struct ecommunity *ecom;
+	ecom = ecommunity_str2com(arg, ECOMMUNITY_COLOR, 0);
+	if (!ecom)
+		return NULL;
+	rcs = XCALLOC(MTYPE_ROUTE_MAP_COMPILED, sizeof(struct rmap_ecom_set));
+	rcs->ecom = ecommunity_intern(ecom);
+	rcs->none = false;
+	return rcs;
+}
+static const struct route_map_rule_cmd route_set_ecommunity_color_cmd = {
+	"extcommunity color",
+	route_set_ecommunity_color,
+	route_set_ecommunity_color_compile,
+	route_set_ecommunity_free,
+};
 
 static void route_set_ecommunity_lb_free(void *rule)
 {
@@ -6169,6 +6235,58 @@ ALIAS_YANG (no_set_ecommunity_rt,
             "BGP extended community attribute\n"
             "Route Target extended community\n")
 
+
+DEFPY_YANG(set_ecommunity_color, set_ecommunity_color_cmd,
+	   "set extcommunity color RTLIST...",
+	   SET_STR
+	   "BGP extended community attribute\n"
+	   "Color extended community\n"
+	   "Color ID\n")
+{
+	int idx_color = 3;
+	char *str;
+	int ret;
+	const char *xpath =
+		"./set-action[action='frr-bgp-route-map:set-extcommunity-color']";
+	char xpath_value[XPATH_MAXLEN];
+
+	nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
+
+	snprintf(xpath_value, sizeof(xpath_value),
+		 "%s/rmap-set-action/frr-bgp-route-map:extcommunity-color",
+		 xpath);
+	str = argv_concat(argv, argc, idx_color);
+	nb_cli_enqueue_change(vty, xpath_value, NB_OP_MODIFY, str);
+	ret = nb_cli_apply_changes(vty, NULL);
+	XFREE(MTYPE_TMP, str);
+	return ret;
+}
+
+DEFPY_YANG(no_set_ecommunity_color_all, no_set_ecommunity_color_all_cmd,
+	   "no set extcommunity color",
+	   NO_STR SET_STR
+	   "BGP extended community attribute\n"
+	   "Color extended community\n")
+{
+	const char *xpath =
+		"./set-action[action='frr-bgp-route-map:set-extcommunity-color']";
+	nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
+	return nb_cli_apply_changes(vty, NULL);
+}
+
+DEFPY_YANG(no_set_ecommunity_color, no_set_ecommunity_color_cmd,
+	   "no set extcommunity color RTLIST...",
+	   NO_STR SET_STR
+	   "BGP extended community attribute\n"
+	   "Color extended community\n"
+	   "Color ID\n")
+{
+	const char *xpath =
+		"./set-action[action='frr-bgp-route-map:set-extcommunity-color']";
+	nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
+	return nb_cli_apply_changes(vty, NULL);
+}
+
 DEFUN_YANG (set_ecommunity_soo,
 	    set_ecommunity_soo_cmd,
 	    "set extcommunity soo ASN:NN_OR_IP-ADDRESS:NN...",
@@ -7131,6 +7249,7 @@ void bgp_route_map_init(void)
 	route_map_install_set(&route_set_originator_id_cmd);
 	route_map_install_set(&route_set_ecommunity_rt_cmd);
 	route_map_install_set(&route_set_ecommunity_soo_cmd);
+	route_map_install_set(&route_set_ecommunity_color_cmd);
 	route_map_install_set(&route_set_ecommunity_lb_cmd);
 	route_map_install_set(&route_set_ecommunity_none_cmd);
 	route_map_install_set(&route_set_tag_cmd);
@@ -7232,6 +7351,9 @@ void bgp_route_map_init(void)
 	install_element(RMAP_NODE, &no_set_ecommunity_lb_short_cmd);
 	install_element(RMAP_NODE, &set_ecommunity_none_cmd);
 	install_element(RMAP_NODE, &no_set_ecommunity_none_cmd);
+	install_element(RMAP_NODE, &set_ecommunity_color_cmd);
+	install_element(RMAP_NODE, &no_set_ecommunity_color_cmd);
+	install_element(RMAP_NODE, &no_set_ecommunity_color_all_cmd);
 #ifdef KEEP_OLD_VPN_COMMANDS
 	install_element(RMAP_NODE, &set_vpn_nexthop_cmd);
 	install_element(RMAP_NODE, &no_set_vpn_nexthop_cmd);

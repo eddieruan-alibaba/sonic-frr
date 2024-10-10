@@ -61,6 +61,7 @@
 #define ECOMMUNITY_REDIRECT_VRF             0x08
 #define ECOMMUNITY_TRAFFIC_MARKING          0x09
 #define ECOMMUNITY_REDIRECT_IP_NH           0x00
+#define ECOMMUNITY_COLOR                    0x0b /* RFC9012 - color */
 /* from IANA: bgp-extended-communities/bgp-extended-communities.xhtml
  * 0x0c Flow-spec Redirect to IPv4 - draft-ietf-idr-flowspec-redirect
  */
@@ -92,6 +93,7 @@
 
 /* Low-order octet of the Extended Communities type field for OPAQUE types */
 #define ECOMMUNITY_OPAQUE_SUBTYPE_ENCAP     0x0c
+#define ECOMMUNITY_OPAQUE_SUBTYPE_COLOR     0x0b
 
 /* Extended communities attribute string format.  */
 #define ECOMMUNITY_FORMAT_ROUTE_MAP            0
@@ -246,6 +248,7 @@ static inline void encode_lb_extcomm(as_t as, uint32_t bw, bool non_trans,
 	eval->val[7] = bandwidth & 0xff;
 }
 
+
 static inline void encode_origin_validation_state(enum rpki_states state,
 						  struct ecommunity_val *eval)
 {
@@ -272,6 +275,50 @@ static inline void encode_origin_validation_state(enum rpki_states state,
 	eval->val[7] = ovs_state;
 }
 
+static inline void encode_color_extcomm(uint32_t color, bool non_trans,
+				     struct ecommunity_val *eval)
+{
+	memset(eval, 0, sizeof(*eval));
+	eval->val[0] = ECOMMUNITY_ENCODE_OPAQUE;
+	if (non_trans)
+		eval->val[0] |= ECOMMUNITY_FLAG_NON_TRANSITIVE;
+	eval->val[1] = ECOMMUNITY_OPAQUE_SUBTYPE_COLOR;
+	eval->val[2] = 0;
+	eval->val[3] = 0;
+	eval->val[4] = (color >> 24) & 0xff;
+	eval->val[5] = (color >> 16) & 0xff;
+	eval->val[6] = (color >> 8) & 0xff;
+	eval->val[7] = color & 0xff;
+}
+
+/*
+ * Encode BGP Color extended community
+ * is's a transitive opaque Extended community (RFC 9012 4.3)
+ * flag is set to 0
+ * RFC 9012 14.10: No values have currently been registered.
+ *            4.3: this field MUST be set to zero by the originator
+ *                 and ignored by the receiver;
+ *
+ */
+static inline void encode_color(uint32_t color_id, as_t as, struct ecommunity_val *eval)
+{
+	/*
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 *  | 0x03         | Sub-Type(0x0b) |    Flags                      |
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 *  |                          Color Value                          |
+	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 */
+	memset(eval, 0, sizeof(*eval));
+	eval->val[0] = ECOMMUNITY_ENCODE_OPAQUE;
+	eval->val[1] = ECOMMUNITY_COLOR;
+	eval->val[2] = (as << 6) & 0xff;
+	eval->val[3] = 0x00;
+	eval->val[4] = (color_id >> 24) & 0xff;
+	eval->val[5] = (color_id >> 16) & 0xff;
+	eval->val[6] = (color_id >> 8) & 0xff;
+	eval->val[7] = color_id & 0xff;
+}
 extern void ecommunity_init(void);
 extern void ecommunity_finish(void);
 extern void ecommunity_free(struct ecommunity **);
@@ -296,7 +343,7 @@ extern void ecommunity_strfree(char **s);
 extern bool ecommunity_include(struct ecommunity *e1, struct ecommunity *e2);
 extern bool ecommunity_match(const struct ecommunity *,
 			     const struct ecommunity *);
-extern char *ecommunity_str(struct ecommunity *);
+extern char *ecommunity_str(struct ecommunity *ecom);
 extern struct ecommunity_val *ecommunity_lookup(const struct ecommunity *,
 						uint8_t, uint8_t);
 
@@ -337,6 +384,10 @@ extern void bgp_remove_ecomm_from_aggregate_hash(
 extern void bgp_aggr_ecommunity_remove(void *arg);
 extern const uint8_t *ecommunity_linkbw_present(struct ecommunity *ecom,
 						uint32_t *bw);
+extern void ecommunity_select_color(struct ecommunity *ecom, uint32_t *color, uint8_t *srte_color_flag, 
+											uint32_t *backup_color, uint8_t *srte_color_backup_flag);
+extern const uint8_t *ecommunity_color_present(struct ecommunity *ecom,
+						uint32_t *color);
 extern struct ecommunity *ecommunity_replace_linkbw(as_t as,
 						    struct ecommunity *ecom,
 						    uint64_t cum_bw,
