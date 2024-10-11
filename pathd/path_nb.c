@@ -61,6 +61,7 @@ const struct frr_yang_module_info frr_pathd_info = {
 				.get_next = pathd_srte_segment_list_get_next,
 				.get_keys = pathd_srte_segment_list_get_keys,
 				.lookup_entry = pathd_srte_segment_list_lookup_entry,
+				.apply_finish = sidlist_apply_changes,
 			},
 			.priority = NB_DFLT_PRIORITY - 1
 		},
@@ -92,6 +93,14 @@ const struct frr_yang_module_info frr_pathd_info = {
 			.cbs = {
 				.modify = pathd_srte_segment_list_segment_sid_value_modify,
 				.destroy = pathd_srte_segment_list_segment_sid_value_destroy,
+			},
+			.priority = NB_DFLT_PRIORITY - 1
+		},
+		{
+			.xpath = "/frr-pathd:pathd/srte/segment-list/segment/srv6-sid-value",
+			.cbs = {
+				.modify = pathd_srte_segment_list_segment_v6_sid_value_modify,
+				.destroy = pathd_srte_segment_list_segment_v6_sid_value_destroy,
 			},
 			.priority = NB_DFLT_PRIORITY - 1
 		},

@@ -85,6 +85,10 @@ module frr-pathd {
             type uint32;
             description "Segment index";
 	  }
+        leaf srv6-sid-value {
+          type inet:ip-address;
+          description "SRv6 sid value";
+        }
         leaf sid-value {
           type rt-types:mpls-label;
           description "MPLS label value";

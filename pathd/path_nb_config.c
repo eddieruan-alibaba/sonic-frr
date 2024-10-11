@@ -62,7 +62,22 @@ int pathd_srte_segment_list_destroy(struct nb_cb_destroy_args *args)
 	segment_list = nb_running_unset_entry(args->dnode);
 	SET_FLAG(segment_list->flags, F_SEGMENT_LIST_DELETED);
 
+	path_zebra_delete_srv6_sidlist(segment_list);
+
 	return NB_OK;
+}
+
+void sidlist_apply_changes(struct nb_cb_apply_finish_args *args)
+{
+	struct srte_segment_list *segment_list;
+
+	if (args == NULL || args->dnode == NULL || args->context == NULL) {
+		return;
+	}
+
+	segment_list = nb_running_get_entry(args->dnode, NULL, false);
+
+	path_zebra_add_srv6_sidlist(segment_list);
 }
 
 /*
@@ -113,14 +128,27 @@ int pathd_srte_segment_list_segment_create(struct nb_cb_create_args *args)
 	struct srte_segment_entry *segment;
 	uint32_t index;
 
-	if (args->event != NB_EV_APPLY)
-		return NB_OK;
-
-	segment_list = nb_running_get_entry(args->dnode, NULL, true);
-	index = yang_dnode_get_uint32(args->dnode, "./index");
-	segment = srte_segment_entry_add(segment_list, index);
-	nb_running_set_entry(args->dnode, segment);
-	SET_FLAG(segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+	switch (args->event)
+	{
+		case NB_EV_VALIDATE:
+		    segment_list = nb_running_get_entry(args->dnode, NULL, false);
+			if (segment_list && is_refcounter_retain(segment_list))
+			{
+				flog_warn(EC_LIB_NB_CB_CONFIG_VALIDATE,
+				  "The Segment List is being used, cannot modify.");
+			    return NB_ERR_RESOURCE;
+			}
+			break;
+		case NB_EV_APPLY:
+			segment_list = nb_running_get_entry(args->dnode, NULL, true);
+			index = yang_dnode_get_uint32(args->dnode, "./index");
+			segment = srte_segment_entry_add(segment_list, index);
+			nb_running_set_entry(args->dnode, segment);
+			SET_FLAG(segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+			break;
+		default:
+			break;
+	}
 
 	return NB_OK;
 }
@@ -129,14 +157,25 @@ int pathd_srte_segment_list_segment_destroy(struct nb_cb_destroy_args *args)
 {
 	struct srte_segment_entry *segment;
 
-	if (args->event != NB_EV_APPLY)
-		return NB_OK;
-
-	segment = nb_running_unset_entry(args->dnode);
-	SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
-
-	srte_segment_entry_del(segment);
-
+	switch (args->event)
+	{
+		case NB_EV_VALIDATE:
+		    segment = nb_running_get_entry(args->dnode, NULL, false);
+			if (segment && is_refcounter_retain(segment->segment_list))
+			{
+				flog_warn(EC_LIB_NB_CB_CONFIG_VALIDATE,
+				  "The Segment List is being used, cannot modify.");
+			    return NB_ERR_RESOURCE;
+			}
+			break;
+	    case NB_EV_APPLY:
+			segment = nb_running_unset_entry(args->dnode);
+			SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+			srte_segment_entry_del(segment);
+			break;
+		default:
+			break;
+	}
 	return NB_OK;
 }
 
@@ -154,6 +193,7 @@ int pathd_srte_segment_list_segment_sid_value_modify(
 
 	segment = nb_running_get_entry(args->dnode, NULL, true);
 	sid_value = yang_dnode_get_uint32(args->dnode, NULL);
+	segment->sid_type = SRTE_SEGMENT_SID_TYPE_MPLS;
 	segment->sid_value = sid_value;
 	SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
 
@@ -169,7 +209,63 @@ int pathd_srte_segment_list_segment_sid_value_destroy(
 		return NB_OK;
 
 	segment = nb_running_get_entry(args->dnode, NULL, true);
+	segment->sid_type = SRTE_SEGMENT_SID_TYPE_UNDEFINED;
 	segment->sid_value = MPLS_LABEL_NONE;
+	SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+
+	return NB_OK;
+}
+
+/*
+ * XPath: /frr-pathd:pathd/srte/segment-list/segment/srv6-sid-value
+ */
+int pathd_srte_segment_list_segment_v6_sid_value_modify(
+	struct nb_cb_modify_args *args)
+{
+	struct ipaddr sid_value;
+	struct srte_segment_entry *segment;
+    char xpath[XPATH_MAXLEN];
+    char xpath_buf[XPATH_MAXLEN - 3];
+
+	switch (args->event)
+	{
+		case NB_EV_VALIDATE:
+			yang_dnode_get_path(args->dnode, xpath_buf, sizeof(xpath_buf));
+			snprintf(xpath, sizeof(xpath), "%s%s", xpath_buf, "/..");
+
+		    segment = nb_running_get_entry_non_rec(NULL, xpath, false);
+			if (segment && is_refcounter_retain(segment->segment_list))
+			{
+				flog_warn(EC_LIB_NB_CB_CONFIG_VALIDATE,
+				  "The Segment List is being used, cannot modify.");
+			    return NB_ERR_RESOURCE;
+			}
+			break;
+		case NB_EV_APPLY:
+			segment = nb_running_get_entry(args->dnode, NULL, true);
+			yang_dnode_get_ip(&sid_value, args->dnode, NULL);
+			segment->sid_type = SRTE_SEGMENT_SID_TYPE_V6;
+			segment->srv6_sid_value = sid_value;
+			SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+			break;
+		default:
+			break;
+	}
+
+	return NB_OK;
+}
+
+int pathd_srte_segment_list_segment_v6_sid_value_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	struct srte_segment_entry *segment;
+
+	if (args->event != NB_EV_APPLY)
+		return NB_OK;
+
+	segment = nb_running_get_entry(args->dnode, NULL, true);
+	segment->sid_type = SRTE_SEGMENT_SID_TYPE_UNDEFINED;
+	memset(&segment->srv6_sid_value, 0, sizeof(struct ipaddr));
 	SET_FLAG(segment->segment_list->flags, F_SEGMENT_LIST_MODIFIED);
 
 	return NB_OK;
@@ -404,6 +500,11 @@ int pathd_srte_policy_candidate_path_destroy(struct nb_cb_destroy_args *args)
 		return NB_OK;
 
 	candidate = nb_running_unset_entry(args->dnode);
+	if(candidate->segment_list){
+		refcounter_decrease(candidate->segment_list);
+		SET_FLAG(candidate->segment_list->flags, F_SEGMENT_LIST_REF);
+		candidate->segment_list = NULL;
+	}
 	SET_FLAG(candidate->flags, F_CANDIDATE_DELETED);
 
 	return NB_OK;
@@ -712,10 +813,23 @@ int pathd_srte_policy_candidate_path_segment_list_name_modify(
 	candidate = nb_running_get_entry(args->dnode, NULL, true);
 	segment_list_name = yang_dnode_get_string(args->dnode, NULL);
 
+    /* old sidlist */
+	if (candidate->segment_list) {
+		refcounter_decrease(candidate->segment_list);
+		SET_FLAG(candidate->segment_list->flags, F_SEGMENT_LIST_REF);
+		candidate->segment_list = NULL;
+	}
+
+    /* new sidlist */
 	candidate->segment_list = srte_segment_list_find(segment_list_name);
+	refcounter_increase(candidate->segment_list);
+
 	candidate->lsp->segment_list = candidate->segment_list;
-	assert(candidate->segment_list);
+	if (!candidate->segment_list)
+		return NB_OK;
+
 	SET_FLAG(candidate->flags, F_CANDIDATE_MODIFIED);
+	SET_FLAG(candidate->segment_list->flags, F_SEGMENT_LIST_REF);
 
 	return NB_OK;
 }
@@ -729,12 +843,19 @@ int pathd_srte_policy_candidate_path_segment_list_name_destroy(
 		return NB_OK;
 
 	candidate = nb_running_get_entry(args->dnode, NULL, true);
-	candidate->segment_list = NULL;
-	candidate->lsp->segment_list = NULL;
+
+	if (candidate->segment_list)
+	{
+		refcounter_decrease(candidate->segment_list);
+		candidate->segment_list = NULL;
+		candidate->lsp->segment_list = NULL;
+	}
+
 	SET_FLAG(candidate->flags, F_CANDIDATE_MODIFIED);
 
 	return NB_OK;
 }
+
 
 /*
  * XPath: /frr-pathd:pathd/srte/policy/candidate-path/constraints/bandwidth

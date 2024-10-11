@@ -85,6 +85,8 @@ typedef uint16_t zebra_size_t;
 #define ZEBRA_FEC_REGISTER_LABEL          0x1
 #define ZEBRA_FEC_REGISTER_LABEL_INDEX    0x2
 
+#define ZEBRA_SID_INDEX_MAX_NUM 8
+#define ZEBRA_SID_LIST_MAX_NUM 16
 /* Client capabilities */
 enum zserv_client_capabilities {
 	ZEBRA_CLIENT_GR_CAPABILITIES = 1,
@@ -153,6 +155,8 @@ typedef enum {
 	ZEBRA_SR_POLICY_SET,
 	ZEBRA_SR_POLICY_DELETE,
 	ZEBRA_SR_POLICY_NOTIFY_STATUS,
+	ZEBRA_SRV6_SIDLIST_SET,
+	ZEBRA_SRV6_SIDLIST_DELETE,
 	ZEBRA_IPMR_ROUTE_STATS,
 	ZEBRA_LABEL_MANAGER_CONNECT,
 	ZEBRA_LABEL_MANAGER_CONNECT_ASYNC,
@@ -637,6 +641,23 @@ struct zapi_srte_tunnel {
 	uint8_t label_num;
 	mpls_label_t labels[MPLS_MAX_LABELS];
 };
+enum zapi_srte_segment_sid_type {
+	ZAPI_SRTE_SEGMENT_SID_TYPE_UNDEFINED = 0,
+	ZAPI_SRTE_SEGMENT_SID_TYPE_V6 = 1,
+	ZAPI_SRTE_SEGMENT_SID_TYPE_MPLS = 2,
+};
+struct zapi_srte_segment_entry {
+	uint32_t index;
+    enum zapi_srte_segment_sid_type sid_type;
+	mpls_label_t sid_value;
+	struct ipaddr srv6_sid_value;
+};
+
+struct zapi_srv6_sidlist{
+	char sidlist_name[SRTE_SEGMENTLIST_NAME_MAX_LENGTH];
+	uint32_t segment_count;
+	struct zapi_srte_segment_entry segments[ZEBRA_SID_INDEX_MAX_NUM];
+};
 
 struct zapi_sr_policy {
 	uint32_t color;
@@ -1070,12 +1091,20 @@ extern int srv6_manager_release_locator_chunk(struct zclient *zclient,
 					      const char *locator_name);
 extern int srv6_manager_get_locator_sid(struct zclient *zclient,
 				   const char *locator_name);
+
+extern enum zclient_send_status zebra_send_srv6_sidlist(struct zclient *zclient,
+							 int cmd, 
+							 struct zapi_srv6_sidlist *sidlist);
+
 extern enum zclient_send_status zebra_send_sr_policy(struct zclient *zclient,
 						     int cmd,
 						     struct zapi_sr_policy *zp);
 extern int zapi_sr_policy_encode(struct stream *s, int cmd,
 				 struct zapi_sr_policy *zp);
 extern int zapi_sr_policy_decode(struct stream *s, struct zapi_sr_policy *zp);
+extern int zapi_srv6_sidlist_encode(struct stream *s, int cmd,
+				 struct zapi_srv6_sidlist *sidlist);
+extern int zapi_srv6_sidlist_decode(struct stream *s, struct zapi_srv6_sidlist *sidlist);
 extern int zapi_sr_policy_notify_status_decode(struct stream *s,
 					       struct zapi_sr_policy *zp);
 

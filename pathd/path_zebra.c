@@ -215,6 +215,56 @@ void path_zebra_delete_sr_policy(struct srte_policy *policy)
 }
 
 /**
+ * Adds a segment list to Zebra.
+ *
+ * @param policy The segment list to add
+ */
+void path_zebra_add_srv6_sidlist(struct srte_segment_list *segment_list)
+{
+	if (segment_list == NULL) {
+		return;
+	}
+	struct srte_segment_entry *s_entry;
+	struct zapi_srv6_sidlist sidlist = {};
+	strlcpy(sidlist.sidlist_name, segment_list->name, sizeof(sidlist.sidlist_name));
+
+	uint32_t segment_count = 0;
+	RB_FOREACH (s_entry, srte_segment_entry_head, &segment_list->segments) {
+		sidlist.segments[segment_count].index = s_entry->index;
+		sidlist.segments[segment_count].sid_type = s_entry->sid_type;
+		memcpy(&sidlist.segments[segment_count].srv6_sid_value, &s_entry->srv6_sid_value, sizeof(struct ipaddr));
+		segment_count++;
+	}
+	sidlist.segment_count = segment_count;
+
+	(void)zebra_send_srv6_sidlist(zclient, ZEBRA_SRV6_SIDLIST_SET, &sidlist);
+}
+
+/**
+ * Deletes a segment list to Zebra.
+ *
+ * @param policy The segment list to delete
+ */
+void path_zebra_delete_srv6_sidlist(struct srte_segment_list *segment_list)
+{
+	struct srte_segment_entry *s_entry;
+	struct zapi_srv6_sidlist sidlist = {};
+	strlcpy(sidlist.sidlist_name, segment_list->name, sizeof(sidlist.sidlist_name));
+
+	uint32_t segment_count = 0;
+	RB_FOREACH (s_entry, srte_segment_entry_head, &segment_list->segments) {
+		sidlist.segments[segment_count].index = s_entry->index;
+		sidlist.segments[segment_count].sid_type = s_entry->sid_type;
+		memcpy(&sidlist.segments[segment_count].srv6_sid_value, &s_entry->srv6_sid_value, sizeof(struct ipaddr));
+		segment_count++;
+	}
+	sidlist.segment_count = segment_count;
+
+	(void)zebra_send_srv6_sidlist(zclient, ZEBRA_SRV6_SIDLIST_DELETE, &sidlist);
+}
+
+
+/**
  * Allocates a label from Zebra's label manager.
  *
  * @param label the label to be allocated

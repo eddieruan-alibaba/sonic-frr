@@ -137,6 +137,8 @@ struct srte_segment_list *srte_segment_list_add(const char *name)
 	segment_list = XCALLOC(MTYPE_PATH_SEGMENT_LIST, sizeof(*segment_list));
 	strlcpy(segment_list->name, name, sizeof(segment_list->name));
 	RB_INIT(srte_segment_entry_head, &segment_list->segments);
+
+	refcounter_init(segment_list);
 	RB_INSERT(srte_segment_list_head, &srte_segment_lists, segment_list);
 
 	return segment_list;
@@ -1470,4 +1472,37 @@ int32_t srte_ted_do_query_type_f(struct srte_segment_entry *entry,
 		srte_segment_set_local_modification(entry->segment_list, entry,
 						    ted_sid);
 	return status;
+}
+
+void refcounter_init(struct srte_segment_list *segment_list)
+{
+    if(segment_list)
+	{
+        segment_list->refcount = 0;
+	}
+}
+
+void refcounter_increase(struct srte_segment_list *segment_list)
+{
+    if(segment_list)
+	{
+        segment_list->refcount++;
+	}
+}
+
+void refcounter_decrease(struct srte_segment_list *segment_list)
+{
+    if(segment_list && segment_list->refcount > 0)
+	{
+        segment_list->refcount--;
+	}
+}
+
+bool is_refcounter_retain(struct srte_segment_list *segment_list)
+{
+    if(segment_list)
+	{
+		return (segment_list->refcount > 0);
+	}
+	return false;
 }

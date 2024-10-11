@@ -540,6 +540,22 @@ DEFPY(srte_segment_list_segment, srte_segment_list_segment_cmd,
 	return nb_cli_apply_changes(vty, NULL);
 }
 
+DEFPY_YANG(srv6te_segment_list_segment, srv6te_segment_list_segment_cmd,
+      "index (0-4294967295)$index ipv6-address  X:X::X:X$ipv6_addr",
+      "Index\n"
+      "Index Value\n"
+      IPV6_STR
+      "IPv6 address\n")
+{
+	char xpath[XPATH_MAXLEN];
+	snprintf(xpath, sizeof(xpath), "./segment[index='%s']", index_str);
+	nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
+
+	snprintf(xpath, sizeof(xpath),
+			"./segment[index='%s']/srv6-sid-value", index_str);
+	nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY, ipv6_addr_str);
+	return nb_cli_apply_changes(vty, NULL);
+}
 DEFPY(srte_segment_list_no_segment,
       srte_segment_list_no_segment_cmd,
       "no index (0-4294967295)$index",
@@ -560,6 +576,10 @@ void cli_show_srte_segment_list_segment(struct vty *vty,
 					bool show_defaults)
 {
 	vty_out(vty, "   index %s", yang_dnode_get_string(dnode, "./index"));
+	if (yang_dnode_exists(dnode, "./srv6-sid-value")) {
+		vty_out(vty, "ipv6-address %s",
+			yang_dnode_get_string(dnode, "./srv6-sid-value"));
+	}
 	if (yang_dnode_exists(dnode, "./sid-value")) {
 		vty_out(vty, " mpls label %s",
 			yang_dnode_get_string(dnode, "./sid-value"));
@@ -1163,6 +1183,73 @@ static const char *metric_type_name(enum srte_candidate_metric_type type)
 	}
 }
 
+DEFPY(show_segment_list_detail,
+      show_segment_list_detail_cmd,
+      "show segment-list detail",
+      SHOW_STR
+      "Segment List\n"
+      "Show a detailed summary\n")
+{
+	struct srte_segment_list *s_list;
+	struct srte_segment_entry *s_entry;
+
+	RB_FOREACH (s_list, srte_segment_list_head, &srte_segment_lists) {
+		vty_out(vty,
+			"Segment-list Name: %s\n", s_list->name);
+
+		RB_FOREACH (s_entry, srte_segment_entry_head,
+			    &s_list->segments) {
+			if(IS_IPADDR_V4(&s_entry->srv6_sid_value))
+				vty_out(vty,
+					"    Index: %-10u  IPv4-address: %pI4\n",
+					s_entry->index, &s_entry->srv6_sid_value.ipaddr_v4);
+			if(IS_IPADDR_V6(&s_entry->srv6_sid_value))
+				vty_out(vty,
+					"    Index: %-10u  IPv6-address: %pI6\n",
+					s_entry->index, &s_entry->srv6_sid_value.ipaddr_v6);
+		}
+	}
+	vty_out(vty, "\n");
+
+	return CMD_SUCCESS;
+}
+
+DEFPY(show_segment_list_by_name_detail,
+      show_segment_list_by_name_detail_cmd,
+      "show segment-list WORD$name",
+      SHOW_STR
+      "Segment List\n"
+	  "Name of the Segment List\n")
+{
+	struct srte_segment_list *s_list;
+	struct srte_segment_entry *s_entry;
+	if (name == NULL)
+		return CMD_SUCCESS;
+
+	s_list = srte_segment_list_find(name);
+	if (s_list == NULL)
+		return CMD_SUCCESS;
+
+	vty_out(vty,
+		"Segment-list Name: %s\n", name);
+
+	RB_FOREACH (s_entry, srte_segment_entry_head,
+			&s_list->segments) {
+		if(IS_IPADDR_V4(&s_entry->srv6_sid_value))
+			vty_out(vty,
+				"    Index: %-10u  IPv4-address: %pI4\n",
+				s_entry->index, &s_entry->srv6_sid_value.ipaddr_v4);
+		if(IS_IPADDR_V6(&s_entry->srv6_sid_value))
+			vty_out(vty,
+				"    Index: %-10u  IPv6-address: %pI6\n",
+				s_entry->index, &s_entry->srv6_sid_value.ipaddr_v6);
+	}
+	vty_out(vty, "\n");
+
+	return CMD_SUCCESS;
+}
+
+
 static void config_write_float(struct vty *vty, float value)
 {
 	if (fabs(truncf(value) - value) < FLT_EPSILON) {
@@ -1353,6 +1440,8 @@ void path_cli_init(void)
 
 	install_element(ENABLE_NODE, &debug_path_policy_cmd);
 	install_element(CONFIG_NODE, &debug_path_policy_cmd);
+	install_element(ENABLE_NODE, &show_segment_list_detail_cmd);
+	install_element(ENABLE_NODE, &show_segment_list_by_name_detail_cmd);
 
 	install_element(CONFIG_NODE, &segment_routing_cmd);
 	install_element(SEGMENT_ROUTING_NODE, &sr_traffic_eng_cmd);
@@ -1360,6 +1449,8 @@ void path_cli_init(void)
 	install_element(SR_TRAFFIC_ENG_NODE, &srte_no_segment_list_cmd);
 	install_element(SR_SEGMENT_LIST_NODE,
 			&srte_segment_list_segment_cmd);
+	install_element(SR_SEGMENT_LIST_NODE,
+			&srv6te_segment_list_segment_cmd);
 	install_element(SR_SEGMENT_LIST_NODE,
 			&srte_segment_list_no_segment_cmd);
 	install_element(SR_TRAFFIC_ENG_NODE, &srte_policy_cmd);

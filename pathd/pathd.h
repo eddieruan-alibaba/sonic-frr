@@ -168,6 +168,11 @@ enum affinity_filter_type {
 };
 #define MAX_AFFINITY_FILTER_TYPE 3
 
+enum srte_segment_sid_type {
+	SRTE_SEGMENT_SID_TYPE_UNDEFINED = 0,
+	SRTE_SEGMENT_SID_TYPE_V6 = 1,
+	SRTE_SEGMENT_SID_TYPE_MPLS = 2,
+};
 struct srte_segment_list;
 
 struct srte_segment_entry {
@@ -179,8 +184,13 @@ struct srte_segment_entry {
 	/* Index of the Label. */
 	uint32_t index;
 
+    enum srte_segment_sid_type sid_type;
+
 	/* Label Value. */
 	mpls_label_t sid_value;
+
+	/*Srv6 Sid*/
+	struct ipaddr srv6_sid_value;
 
 	/* NAI Type */
 	enum srte_segment_nai_type nai_type;
@@ -205,7 +215,7 @@ struct srte_segment_list {
 	RB_ENTRY(srte_segment_list) entry;
 
 	/* Name of the Segment List. */
-	char name[64];
+	char name[SRTE_SEGMENTLIST_NAME_MAX_LENGTH];
 
 	/* The Protocol-Origin. */
 	enum srte_protocol_origin protocol_origin;
@@ -216,12 +226,16 @@ struct srte_segment_list {
 	/* Nexthops. */
 	struct srte_segment_entry_head segments;
 
+    /* reference count */
+    uint16_t refcount;
+
 	/* Status flags. */
 	uint16_t flags;
 #define F_SEGMENT_LIST_NEW 0x0002
 #define F_SEGMENT_LIST_MODIFIED 0x0004
 #define F_SEGMENT_LIST_DELETED 0x0008
 #define F_SEGMENT_LIST_SID_CONFLICT 0x0010
+#define F_SEGMENT_LIST_REF 0x0020
 };
 RB_HEAD(srte_segment_list_head, srte_segment_list);
 RB_PROTOTYPE(srte_segment_list_head, srte_segment_list, entry,
@@ -491,4 +505,9 @@ int32_t srte_ted_do_query_type_e(struct srte_segment_entry *entry,
  */
 int32_t srte_ted_do_query_type_f(struct srte_segment_entry *entry,
 				 struct ipaddr *local, struct ipaddr *remote);
+
+void refcounter_init(struct srte_segment_list *segment_list);
+void refcounter_increase(struct srte_segment_list *segment_list);
+void refcounter_decrease(struct srte_segment_list *segment_list);
+bool is_refcounter_retain(struct srte_segment_list *segment_list);
 #endif /* _FRR_PATHD_H_ */

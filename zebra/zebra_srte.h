@@ -36,6 +36,7 @@ enum zebra_sr_policy_update_label_mode {
 	ZEBRA_SR_POLICY_LABEL_REMOVED = 3,
 };
 
+DEFINE_MTYPE_STATIC(ZEBRA, ZEBRA_SRV6_SIDLIST, "Zebra Srv6 SidList");
 struct zebra_sr_policy {
 	RB_ENTRY(zebra_sr_policy) entry;
 	uint32_t color;
@@ -64,6 +65,8 @@ int zebra_sr_policy_validate(struct zebra_sr_policy *policy,
 int zebra_sr_policy_bsid_install(struct zebra_sr_policy *policy);
 void zebra_sr_policy_bsid_uninstall(struct zebra_sr_policy *policy,
 				    mpls_label_t old_bsid);
+int zebra_srv6_sidlist_install(struct zapi_srv6_sidlist *sidlist);
+void zebra_srv6_sidlist_uninstall(struct zapi_srv6_sidlist *sidlist);
 void zebra_srte_init(void);
 int zebra_sr_policy_label_update(mpls_label_t label,
 				 enum zebra_sr_policy_update_label_mode mode);

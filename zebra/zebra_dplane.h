@@ -30,6 +30,8 @@
 #include "zebra/zserv.h"
 #include "zebra/zebra_mpls.h"
 #include "zebra/zebra_nhg.h"
+#include "pathd/pathd.h"
+#include "zebra/zebra_srv6.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,6 +129,10 @@ enum dplane_op_e {
 	DPLANE_OP_PIC_CONTEXT_UPDATE,
 	DPLANE_OP_PIC_CONTEXT_DELETE,
 
+	/* sid list update */
+	DPLANE_OP_SID_LIST_INSTALL,
+	DPLANE_OP_SID_LIST_UPDATE,
+	DPLANE_OP_SID_LIST_DELETE,
 
 	/* LSP update */
 	DPLANE_OP_LSP_INSTALL,
@@ -336,6 +342,7 @@ void dplane_ctx_set_op(struct zebra_dplane_ctx *ctx, enum dplane_op_e op);
 const char *dplane_op2str(enum dplane_op_e op);
 
 const struct prefix *dplane_ctx_get_dest(const struct zebra_dplane_ctx *ctx);
+const struct zebra_srv6_sidlist *dplane_ctx_get_sidlist(const struct zebra_dplane_ctx *ctx);
 void dplane_ctx_set_dest(struct zebra_dplane_ctx *ctx,
 			 const struct prefix *dest);
 const char *dplane_ctx_get_ifname(const struct zebra_dplane_ctx *ctx);
@@ -482,6 +489,9 @@ dplane_ctx_get_nhe_ng(const struct zebra_dplane_ctx *ctx);
 const struct nh_grp *
 dplane_ctx_get_nhe_nh_grp(const struct zebra_dplane_ctx *ctx);
 uint8_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx);
+
+int dplane_ctx_sidlist_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
+			struct zebra_srv6_sidlist *sid_list);
 
 /* Accessors for LSP information */
 
@@ -735,6 +745,13 @@ enum zebra_dplane_result dplane_pic_context_add(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nexthop_update(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_pic_context_delete(struct nhg_hash_entry *nhe);
+
+/*
+ * Enqueue sid list change operations for the dataplane.
+ */
+enum zebra_dplane_result dplane_sidlist_add(struct zebra_srv6_sidlist *sid_list);
+enum zebra_dplane_result dplane_sidlist_update(struct zebra_srv6_sidlist *sid_list);
+enum zebra_dplane_result dplane_sidlist_delete(struct zebra_srv6_sidlist *sid_list);
 
 /*
  * Enqueue LSP change operations for the dataplane.

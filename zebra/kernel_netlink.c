@@ -1589,6 +1589,10 @@ static enum netlink_msg_status nl_put_msg(struct nl_batch *bth,
 	case DPLANE_OP_PIC_CONTEXT_DELETE:
 		return netlink_put_nexthop_update_msg(bth, ctx);
 
+	case DPLANE_OP_SID_LIST_INSTALL:
+	case DPLANE_OP_SID_LIST_UPDATE:
+	case DPLANE_OP_SID_LIST_DELETE:
+		return FRR_NETLINK_SUCCESS;
 	case DPLANE_OP_LSP_INSTALL:
 	case DPLANE_OP_LSP_UPDATE:
 	case DPLANE_OP_LSP_DELETE:

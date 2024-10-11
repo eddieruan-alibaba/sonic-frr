@@ -359,6 +359,32 @@ void zebra_sr_policy_bsid_uninstall(struct zebra_sr_policy *policy,
 	mpls_lsp_uninstall_all_vrf(policy->zvrf, zt->type, old_bsid);
 }
 
+int zebra_srv6_sidlist_install(struct zapi_srv6_sidlist *sidlist)
+{
+	struct zebra_srv6_sidlist *sid_list = XCALLOC(MTYPE_ZEBRA_SRV6_SIDLIST, sizeof(struct zebra_srv6_sidlist));
+	snprintf(sid_list->sidlist_name_, SRV6_SEGMENTLIST_NAME_MAX_LENGTH, "%s", sidlist->sidlist_name);
+	sid_list->segment_count_ = sidlist->segment_count;
+	for (uint32_t i = 0; i < sidlist->segment_count; i++) {
+		sid_list->segments_[i].index_ = sidlist->segments[i].index;
+		sid_list->segments_[i].srv6_sid_value_ = sidlist->segments[i].srv6_sid_value;
+	}
+	srv6_sidlist_install(sid_list);
+	return 0;
+}
+
+void zebra_srv6_sidlist_uninstall(struct zapi_srv6_sidlist *sidlist)
+{
+	struct zebra_srv6_sidlist *sid_list = XCALLOC(MTYPE_ZEBRA_SRV6_SIDLIST, sizeof(struct zebra_srv6_sidlist));
+	snprintf(sid_list->sidlist_name_, SRV6_SEGMENTLIST_NAME_MAX_LENGTH, "%s", sidlist->sidlist_name);
+	sid_list->segment_count_ = sidlist->segment_count;
+	for (uint32_t i = 0; i < sidlist->segment_count; i++) {
+		sid_list->segments_[i].index_ = sidlist->segments[i].index;
+		sid_list->segments_[i].srv6_sid_value_ = sidlist->segments[i].srv6_sid_value;
+	}
+	srv6_sidlist_uninstall(sid_list);
+	return;
+}
+
 int zebra_sr_policy_label_update(mpls_label_t label,
 				 enum zebra_sr_policy_update_label_mode mode)
 {

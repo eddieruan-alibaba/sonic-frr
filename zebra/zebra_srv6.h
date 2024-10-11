@@ -34,6 +34,23 @@ struct zebra_srv6 {
 	struct list *locators;
 };
 
+#define SRV6_SID_LIST_TABLE "SRV6_SID_LIST_TABLE"
+// DEFINE_MTYPE_STATIC(ZEBRA, ZEBRA_SRV6_SIDLIST, "Zebra Srv6 SidList");
+
+#define SRV6_SEGMENTLIST_NAME_MAX_LENGTH 64
+#define SRV6_SID_INDEX_MAX_NUM 8
+
+struct zebra_srv6_segment_entry {
+	uint32_t index_;
+	struct ipaddr srv6_sid_value_;
+};
+
+struct zebra_srv6_sidlist {
+	char sidlist_name_[SRV6_SEGMENTLIST_NAME_MAX_LENGTH];
+	uint32_t segment_count_;
+	struct zebra_srv6_segment_entry segments_[SRV6_SID_INDEX_MAX_NUM];
+};
+
 /* declare hooks for the basic API, so that it can be specialized or served
  * externally. Also declare a hook when those functions have been registered,
  * so that any external module wanting to replace those can react
@@ -72,6 +89,8 @@ DECLARE_HOOK(srv6_manager_get_locator_sid_all,
 	      vrf_id_t vrf_id),
 	     (client, vrf_id));
 
+int srv6_sidlist_install(struct zebra_srv6_sidlist *sid_list);
+void srv6_sidlist_uninstall(struct zebra_srv6_sidlist *sid_list);
 
 extern void zebra_srv6_locator_add(struct srv6_locator *locator);
 extern void zebra_srv6_locator_delete(struct srv6_locator *locator);

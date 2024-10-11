@@ -3564,6 +3564,18 @@ int tm_release_table_chunk(struct zclient *zclient, uint32_t start,
 	return 0;
 }
 
+extern enum zclient_send_status zebra_send_srv6_sidlist(struct zclient *zclient,
+							 int cmd, 
+							 struct zapi_srv6_sidlist *sidlist)
+{
+	if (cmd == ZEBRA_SRV6_SIDLIST_SET || cmd == ZEBRA_SRV6_SIDLIST_DELETE)
+	{
+		if (zapi_srv6_sidlist_encode(zclient->obuf, cmd, sidlist) < 0)
+			return ZCLIENT_SEND_FAILURE;
+	}
+	return zclient_send_message(zclient);
+}
+
 enum zclient_send_status zebra_send_sr_policy(struct zclient *zclient, int cmd,
 					      struct zapi_sr_policy *zp)
 {
@@ -3643,6 +3655,43 @@ int zapi_sr_policy_notify_status_decode(struct stream *s,
 	STREAM_GET_IPADDR(s, &zp->endpoint);
 	STREAM_GET(&zp->name, s, SRTE_POLICY_NAME_MAX_LENGTH);
 	STREAM_GETL(s, zp->status);
+
+	return 0;
+
+stream_failure:
+	return -1;
+}
+int zapi_srv6_sidlist_encode(struct stream *s, 
+						int cmd, struct zapi_srv6_sidlist *sidlist)
+{
+	stream_reset(s);
+	zclient_create_header(s, cmd, VRF_DEFAULT);
+
+	stream_write(s, sidlist->sidlist_name, SRTE_SEGMENTLIST_NAME_MAX_LENGTH);
+	stream_putl(s, sidlist->segment_count);
+	for (uint32_t i = 0; i < sidlist->segment_count; i++) {
+		stream_putl(s, sidlist->segments[i].index);
+		stream_putl(s, sidlist->segments[i].sid_type);
+		stream_put_ipaddr(s, &sidlist->segments[i].srv6_sid_value);
+	}
+
+	/* Put length at the first point of the stream. */
+	stream_putw_at(s, 0, stream_get_endp(s));
+	return 0;
+}
+
+int zapi_srv6_sidlist_decode(struct stream *s, struct zapi_srv6_sidlist *sidlist)
+{
+	memset(sidlist, 0, sizeof(sidlist));
+
+	STREAM_GET(sidlist->sidlist_name, s, SRTE_SEGMENTLIST_NAME_MAX_LENGTH);
+	STREAM_GETL(s, sidlist->segment_count);
+
+	for (uint32_t i = 0; i < sidlist->segment_count; i++) {
+		STREAM_GETL(s, sidlist->segments[i].index);
+		STREAM_GETL(s, sidlist->segments[i].sid_type);
+		STREAM_GET_IPADDR(s, &sidlist->segments[i].srv6_sid_value);
+	}
 
 	return 0;
 

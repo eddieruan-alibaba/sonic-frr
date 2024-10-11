@@ -392,6 +392,8 @@ struct zebra_dplane_ctx {
 	/* Support info for different kinds of updates */
 	union {
 		struct dplane_route_info rinfo;
+		// struct srte_segment_list segment_list;
+		struct zebra_srv6_sidlist sidlist;
 		struct zebra_lsp lsp;
 		struct dplane_pw_info pw;
 		struct dplane_br_port_info br_port;
@@ -547,6 +549,9 @@ static struct zebra_dplane_globals {
 	_Atomic uint32_t dg_nexthops_in;
 	_Atomic uint32_t dg_nexthop_errors;
 
+	_Atomic uint32_t dg_sidlists_in;
+	_Atomic uint32_t dg_sidlist_errors;
+
 	_Atomic uint32_t dg_lsps_in;
 	_Atomic uint32_t dg_lsp_errors;
 
@@ -624,6 +629,8 @@ DECLARE_DLIST(zns_info_list, struct dplane_zns_info, link);
 
 /* Prototypes */
 static void dplane_thread_loop(struct thread *event);
+static enum zebra_dplane_result sidlist_update_internal(struct zebra_srv6_sidlist *sid_list,
+						    enum dplane_op_e op);
 static enum zebra_dplane_result lsp_update_internal(struct zebra_lsp *lsp,
 						    enum dplane_op_e op);
 static enum zebra_dplane_result pw_update_internal(struct zebra_pw *pw,
@@ -1031,6 +1038,17 @@ const char *dplane_op2str(enum dplane_op_e op)
 		break;
 	case DPLANE_OP_PIC_CONTEXT_DELETE:
 		ret = "PIC_CONTEXT_DELETE";
+
+	case DPLANE_OP_SID_LIST_INSTALL:
+		ret = "SIDLIST_INSTALL";
+		break;
+	case DPLANE_OP_SID_LIST_UPDATE:
+		ret = "SIDLIST_UPDATE";
+		break;
+	case DPLANE_OP_SID_LIST_DELETE:
+		ret = "SIDLIST_DELETE";
+		break;
+
 	case DPLANE_OP_LSP_INSTALL:
 		ret = "LSP_INSTALL";
 		break;
@@ -1203,6 +1221,13 @@ const char *dplane_res2str(enum zebra_dplane_result res)
 	}
 
 	return ret;
+}
+
+const struct zebra_srv6_sidlist *dplane_ctx_get_sidlist(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+
+	return &(ctx->u.sidlist);
 }
 
 void dplane_ctx_set_dest(struct zebra_dplane_ctx *ctx,
@@ -3261,6 +3286,43 @@ int dplane_ctx_intf_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 }
 
 /*
+ * Capture information for an sid list update in a dplane context.
+ */
+int dplane_ctx_sidlist_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
+			struct zebra_srv6_sidlist *sid_list)
+{
+	int ret = AOK;
+
+	ctx->zd_op = op;
+	ctx->zd_status = ZEBRA_DPLANE_REQUEST_SUCCESS;
+
+	/* Capture namespace info */
+	dplane_ctx_ns_init(ctx, zebra_ns_lookup(NS_DEFAULT),
+			   (op == DPLANE_OP_SID_LIST_UPDATE));
+
+	memset(&ctx->u.sidlist, 0, sizeof(ctx->u.sidlist));
+
+	/* This may be called to create/init a dplane context, not necessarily
+	 * to copy an lsp object.
+	 */
+
+	zlog_info("init dplane ctx %s: in-label",
+			   dplane_op2str(op));
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
+		zlog_debug("init dplane ctx %s: in-label",
+			   dplane_op2str(op));
+
+	strcpy(ctx->u.sidlist.sidlist_name_, sid_list->sidlist_name_);
+	ctx->u.sidlist.segment_count_ = sid_list->segment_count_;
+	for (int i = 0; i < sid_list->segment_count_; i++) {
+		ctx->u.sidlist.segments_[i].index_ = sid_list->segments_[i].index_;
+		ctx->u.sidlist.segments_[i].srv6_sid_value_ = sid_list->segments_[i].srv6_sid_value_;
+	}
+
+	return ret;
+}
+
+/*
  * Capture information for an LSP update in a dplane context.
  */
 int dplane_ctx_lsp_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
@@ -4297,6 +4359,39 @@ enum zebra_dplane_result dplane_pic_context_delete(struct nhg_hash_entry *nhe)
 }
 
 /*
+ * Enqueue sid list add for the dataplane.
+ */
+enum zebra_dplane_result dplane_sidlist_add(struct zebra_srv6_sidlist *sid_list)
+{
+	enum zebra_dplane_result ret =
+		sidlist_update_internal(sid_list, DPLANE_OP_SID_LIST_INSTALL);
+
+	return ret;
+}
+
+/*
+ * Enqueue sid list update for the dataplane.
+ */
+enum zebra_dplane_result dplane_sidlist_update(struct zebra_srv6_sidlist *sid_list)
+{
+	enum zebra_dplane_result ret =
+		sidlist_update_internal(sid_list, DPLANE_OP_SID_LIST_UPDATE);
+
+	return ret;
+}
+
+/*
+ * Enqueue LSP delete for the dataplane.
+ */
+enum zebra_dplane_result dplane_sidlist_delete(struct zebra_srv6_sidlist *sid_list)
+{
+	enum zebra_dplane_result ret =
+		sidlist_update_internal(sid_list, DPLANE_OP_SID_LIST_DELETE);
+
+	return ret;
+}
+
+/*
  * Enqueue LSP add for the dataplane.
  */
 enum zebra_dplane_result dplane_lsp_add(struct zebra_lsp *lsp)
@@ -4405,6 +4500,38 @@ enum zebra_dplane_result dplane_pw_install(struct zebra_pw *pw)
 enum zebra_dplane_result dplane_pw_uninstall(struct zebra_pw *pw)
 {
 	return pw_update_internal(pw, DPLANE_OP_PW_UNINSTALL);
+}
+
+/*
+ * Common internal sid list update utility
+ */
+static enum zebra_dplane_result sidlist_update_internal(struct zebra_srv6_sidlist *sid_list,
+						    enum dplane_op_e op)
+{
+	enum zebra_dplane_result result = ZEBRA_DPLANE_REQUEST_FAILURE;
+	int ret = EINVAL;
+	struct zebra_dplane_ctx *ctx = NULL;
+
+	/* Obtain context block */
+	ctx = dplane_ctx_alloc();
+
+	ret = dplane_ctx_sidlist_init(ctx, op, sid_list);
+
+	ret = dplane_update_enqueue(ctx);
+
+	/* Update counter */
+	atomic_fetch_add_explicit(&zdplane_info.dg_sidlists_in, 1,
+				  memory_order_relaxed);
+
+	if (ret == AOK)
+		result = ZEBRA_DPLANE_REQUEST_QUEUED;
+	else {
+		atomic_fetch_add_explicit(&zdplane_info.dg_sidlist_errors, 1,
+					  memory_order_relaxed);
+		dplane_ctx_free(&ctx);
+	}
+
+	return result;
 }
 
 /*

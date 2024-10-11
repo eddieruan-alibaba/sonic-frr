@@ -42,6 +42,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "zebra/zebra_srte.h"
 
 DEFINE_MGROUP(SRV6_MGR, "SRv6 Manager");
 DEFINE_MTYPE_STATIC(SRV6_MGR, SRV6M_CHUNK, "SRv6 Manager Chunk");
@@ -82,6 +83,19 @@ DEFINE_HOOK(srv6_manager_get_locator_sid_all,
 	    (struct zserv *client,
 	     vrf_id_t vrf_id),
 	    (client, vrf_id));
+
+int srv6_sidlist_install(struct zebra_srv6_sidlist *sid_list)
+{
+	dplane_sidlist_add(sid_list);
+	return 0;
+}
+
+void srv6_sidlist_uninstall(struct zebra_srv6_sidlist *sid_list)
+{
+	dplane_sidlist_delete(sid_list);
+	return;
+}
+
 
 /* define wrappers to be called in zapi_msg.c (as hooks must be called in
  * source file where they were defined)

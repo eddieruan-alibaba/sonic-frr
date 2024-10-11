@@ -28,6 +28,7 @@ extern "C" {
 #endif
 
 #define SRTE_POLICY_NAME_MAX_LENGTH 64
+#define SRTE_SEGMENTLIST_NAME_MAX_LENGTH 64
 
 enum zebra_sr_policy_status {
 	ZEBRA_SR_POLICY_UP = 0,

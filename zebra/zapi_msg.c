@@ -2645,6 +2645,39 @@ static void zread_sr_policy_delete(ZAPI_HANDLER_ARGS)
 	zebra_sr_policy_del(policy);
 }
 
+static void zread_srv6_sidlist_set(ZAPI_HANDLER_ARGS)
+{
+	struct stream *s;
+	struct zapi_srv6_sidlist sidlist;
+
+	/* Get input stream.  */
+	s = msg;
+	if (zapi_srv6_sidlist_decode(s, &sidlist) < 0) {
+		if (IS_ZEBRA_DEBUG_RECV)
+			zlog_debug("%s: Unable to decode zapi_srv6_sidlist sent",
+				   __func__);
+		return;
+	}
+
+	zebra_srv6_sidlist_install(&sidlist);
+}
+
+static void zread_srv6_sidlist_delete(ZAPI_HANDLER_ARGS)
+{
+	struct stream *s;
+	struct zapi_srv6_sidlist sidlist;
+
+	/* Get input stream.  */
+	s = msg;
+	if (zapi_srv6_sidlist_decode(s, &sidlist) < 0) {
+		if (IS_ZEBRA_DEBUG_RECV)
+			zlog_debug("%s: Unable to decode zapi_srv6_sidlist sent",
+				   __func__);
+		return;
+	}
+
+	zebra_srv6_sidlist_uninstall(&sidlist);
+}
 int zsend_sr_policy_notify_status(uint32_t color, struct ipaddr *endpoint,
 				  char *name, int status)
 {
@@ -3955,6 +3988,8 @@ void (*const zserv_handlers[])(ZAPI_HANDLER_ARGS) = {
 	[ZEBRA_INTERFACE_DISABLE_RADV] = zebra_interface_radv_disable,
 	[ZEBRA_SR_POLICY_SET] = zread_sr_policy_set,
 	[ZEBRA_SR_POLICY_DELETE] = zread_sr_policy_delete,
+	[ZEBRA_SRV6_SIDLIST_SET] = zread_srv6_sidlist_set,
+	[ZEBRA_SRV6_SIDLIST_DELETE] = zread_srv6_sidlist_delete,
 	[ZEBRA_MPLS_LABELS_ADD] = zread_mpls_labels_add,
 	[ZEBRA_MPLS_LABELS_DELETE] = zread_mpls_labels_delete,
 	[ZEBRA_MPLS_LABELS_REPLACE] = zread_mpls_labels_replace,
