@@ -47,6 +47,8 @@ extern "C" {
 
 #define BFD_PROFILE_NAME_LEN 64
 
+#define BFD_NAME_SIZE 255
+
 const char *bfd_get_status_str(int status);
 
 extern void bfd_client_sendmsg(struct zclient *zclient, int command,

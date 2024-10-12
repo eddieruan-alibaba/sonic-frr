@@ -661,7 +661,7 @@ struct zapi_srv6_sidlist{
 
 struct zapi_sr_policy {
 	uint32_t color;
-	struct ipaddr endpoint;
+	struct prefix endpoint;
 	char name[SRTE_POLICY_NAME_MAX_LENGTH];
 	struct zapi_srte_tunnel segment_list;
 	int status;

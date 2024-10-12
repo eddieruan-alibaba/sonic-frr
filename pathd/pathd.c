@@ -38,6 +38,7 @@ DEFINE_MGROUP(PATHD, "pathd");
 DEFINE_MTYPE_STATIC(PATHD, PATH_SEGMENT_LIST, "Segment List");
 DEFINE_MTYPE_STATIC(PATHD, PATH_SR_POLICY, "SR Policy");
 DEFINE_MTYPE_STATIC(PATHD, PATH_SR_CANDIDATE, "SR Policy candidate path");
+DEFINE_MTYPE_STATIC(PATHD, PATH_SR_CANDIDATE_GROUP, "SR Policy candidate group");
 
 DEFINE_HOOK(pathd_candidate_created, (struct srte_candidate * candidate),
 	    (candidate));
@@ -95,9 +96,37 @@ struct srte_segment_list_head srte_segment_lists =
 static inline int srte_candidate_compare(const struct srte_candidate *a,
 					 const struct srte_candidate *b)
 {
-	return a->preference - b->preference;
+	if (a->preference != b->preference)
+	{
+		return a->preference - b->preference;
+	}
+	return strcmp(a->name, b->name);
+}
+static inline int srte_policy_candidate_compare(const struct srte_candidate *a,
+					 const struct srte_candidate *b)
+{
+	int ret = 0;
+	if (a->preference != b->preference)
+	{
+        return a->preference - b->preference;
+	}
+	ret = strcmp(a->name, b->name);
+	if(ret) return ret;
+	if(a->policy->color != b->policy->color)
+	{
+		return a->policy->color - b->policy->color;
+	}
+	ret = memcmp(&a->policy->endpoint, &b->policy->endpoint, sizeof(struct ipaddr));
+	return ret;
 }
 RB_GENERATE(srte_candidate_head, srte_candidate, entry, srte_candidate_compare)
+RB_GENERATE(srte_candidate_pref_head, srte_candidate, perf_entry, srte_candidate_compare)
+static inline int srte_candidate_group_compare(const struct srte_candidate_group *a,
+					 const struct srte_candidate_group *b)
+{
+	return a->preference - b->preference;
+}
+RB_GENERATE(srte_candidate_group_head, srte_candidate_group, entry, srte_candidate_group_compare)
 
 /* Generate rb-tree of SR Policy instances. */
 static inline int srte_policy_compare(const struct srte_policy *a,
@@ -114,7 +143,7 @@ static void srte_policy_status_log(struct srte_policy *policy)
 {
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	if (policy->status == SRTE_POLICY_STATUS_DOWN) {
 		PATH_POLICY_DEBUG("SR-TE(%s, %u): policy is DOWN", endpoint,
 				  policy->color);
@@ -324,7 +353,7 @@ void srte_segment_set_local_modification(struct srte_segment_list *s_list,
  * @param endpoint The IP address of the policy endpoint
  * @return The created policy
  */
-struct srte_policy *srte_policy_add(uint32_t color, struct ipaddr *endpoint,
+struct srte_policy *srte_policy_add(uint32_t color, struct prefix *endpoint,
 				    enum srte_protocol_origin origin,
 				    const char *originator)
 {
@@ -340,6 +369,7 @@ struct srte_policy *srte_policy_add(uint32_t color, struct ipaddr *endpoint,
 			sizeof(policy->originator));
 
 	RB_INIT(srte_candidate_head, &policy->candidate_paths);
+	RB_INIT(srte_candidate_group_head, &policy->candidate_groups);
 	RB_INSERT(srte_policy_head, &srte_policies, policy);
 
 	return policy;
@@ -381,13 +411,24 @@ void srte_policy_del(struct srte_policy *policy)
  * @param endpoint The endpoint of the policy to look for
  * @return The policy if found, NULL otherwise
  */
-struct srte_policy *srte_policy_find(uint32_t color, struct ipaddr *endpoint)
+struct srte_policy *srte_policy_find(uint32_t color, struct prefix *endpoint)
 {
 	struct srte_policy search;
 
 	search.color = color;
 	search.endpoint = *endpoint;
 	return RB_FIND(srte_policy_head, &srte_policies, &search);
+}
+struct srte_policy *srte_policy_find_by_name(const char *name)
+{
+	struct srte_policy *policy;
+	RB_FOREACH (policy, srte_policy_head, &srte_policies) {
+		if (!strcmp(policy->name, name))
+		{
+			return policy;
+		}
+	}
+	return NULL;
 }
 
 /*
@@ -578,8 +619,14 @@ void srte_apply_changes(void)
 			srte_segment_list_del(segment_list);
 			continue;
 		}
+		if (CHECK_FLAG(segment_list->flags, F_SEGMENT_LIST_REF)){
+		}
+		if (CHECK_FLAG(segment_list->flags, F_SEGMENT_LIST_NEW)
+		    || CHECK_FLAG(segment_list->flags, F_SEGMENT_LIST_MODIFIED)) {
+		}
 		UNSET_FLAG(segment_list->flags, F_SEGMENT_LIST_NEW);
 		UNSET_FLAG(segment_list->flags, F_SEGMENT_LIST_MODIFIED);
+		UNSET_FLAG(segment_list->flags, F_SEGMENT_LIST_REF);
 	}
 }
 
@@ -600,7 +647,7 @@ void srte_policy_apply_changes(struct srte_policy *policy)
 	struct srte_candidate *new_best_candidate;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 
 	/* Get old and new best candidate path. */
 	old_best_candidate = policy->best_candidate;
@@ -690,7 +737,8 @@ void srte_policy_apply_changes(struct srte_policy *policy)
 struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 					  uint32_t preference,
 					  enum srte_protocol_origin origin,
-					  const char *originator)
+					  const char *originator,
+					  const char *name)
 {
 	struct srte_candidate *candidate;
 	struct srte_lsp *lsp;
@@ -699,6 +747,7 @@ struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 	lsp = XCALLOC(MTYPE_PATH_SR_CANDIDATE, sizeof(*lsp));
 
 	candidate->preference = preference;
+    strlcpy(candidate->name, name, sizeof(candidate->name));
 	candidate->policy = policy;
 	candidate->type = SRTE_CANDIDATE_TYPE_UNDEFINED;
 	candidate->discriminator = frr_weak_random();
@@ -708,6 +757,8 @@ struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 			sizeof(candidate->originator));
 		lsp->protocol_origin = origin;
 	}
+	candidate->segment_list = NULL;
+	cpath_status_init(candidate->policy, candidate);
 
 	if (candidate->protocol_origin == SRTE_ORIGIN_PCEP
 	    || candidate->protocol_origin == SRTE_ORIGIN_BGP) {
@@ -718,9 +769,64 @@ struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 
 	RB_INSERT(srte_candidate_head, &policy->candidate_paths, candidate);
 
+	srte_candidate_add_group(policy, candidate);
 	return candidate;
 }
 
+/**
+ * Adds a candidate group to a policy.
+ *
+ * @param policy The policy the candidate path should be added to
+ * @param preference The preference of the candidate path to be added
+ * @return The added candidate path
+ */
+struct srte_candidate_group *srte_candidate_group_add(struct srte_policy *policy,
+					  uint32_t preference)
+{
+	struct srte_candidate_group *cpath_group;
+
+	cpath_group = XCALLOC(MTYPE_PATH_SR_CANDIDATE_GROUP, sizeof(*cpath_group));
+
+	cpath_group->preference = preference;
+	cpath_group->policy = policy;
+	cpath_group->status = SRTE_DETECT_DOWN;
+	cpath_group->up_cpath_num = 0;
+
+    RB_INIT(srte_candidate_pref_head, &cpath_group->candidate_paths);
+
+	RB_INSERT(srte_candidate_group_head, &policy->candidate_groups, cpath_group);
+
+	return cpath_group;
+}
+
+/**
+ * Adds a candidate path to a group.
+ *
+ * @param cpath_group The candidate group
+ * @param candidate The candidate path to be added
+ * @return void
+ */
+void srte_candidate_add_group(struct srte_policy *policy,
+					  struct srte_candidate *candidate)
+{
+	struct srte_candidate_group *cpath_group;
+
+	if (!policy || !candidate)
+	{
+		return;
+	}
+
+	cpath_group = srte_candidate_group_find(policy, candidate->preference);
+	if (cpath_group == NULL)
+	{
+		cpath_group = srte_candidate_group_add(policy, candidate->preference);
+	}
+
+    candidate->group = cpath_group;
+	RB_INSERT(srte_candidate_pref_head, &cpath_group->candidate_paths, candidate);
+
+	return;
+}
 /**
  * Deletes a candidate.
  *
@@ -733,11 +839,26 @@ struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 void srte_candidate_del(struct srte_candidate *candidate)
 {
 	struct srte_policy *srte_policy = candidate->policy;
+	struct srte_candidate_group *cpath_group;
 
 	RB_REMOVE(srte_candidate_head, &srte_policy->candidate_paths,
 		  candidate);
+	cpath_group = srte_candidate_group_find(srte_policy, candidate->preference);
+	if (cpath_group)
+	{
+		RB_REMOVE(srte_candidate_pref_head, &cpath_group->candidate_paths,
+			candidate);
+		if (RB_EMPTY(srte_candidate_pref_head, &cpath_group->candidate_paths))
+		{
+			RB_REMOVE(srte_candidate_group_head, &srte_policy->candidate_groups,
+			    cpath_group);
+			XFREE(MTYPE_PATH_SR_CANDIDATE_GROUP, cpath_group);
+		}
+	}
 
-	XFREE(MTYPE_PATH_SR_CANDIDATE, candidate->lsp);
+	if (candidate->lsp)
+		XFREE(MTYPE_PATH_SR_CANDIDATE, candidate->lsp);
+
 	XFREE(MTYPE_PATH_SR_CANDIDATE, candidate);
 }
 
@@ -756,7 +877,7 @@ void srte_candidate_set_bandwidth(struct srte_candidate *candidate,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s %sconfig bandwidth set to %f B/s",
 		endpoint, policy->color, candidate->name,
@@ -784,7 +905,7 @@ void srte_lsp_set_bandwidth(struct srte_lsp *lsp, float bandwidth,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s %slsp bandwidth set to %f B/s",
 		endpoint, policy->color, candidate->name,
@@ -806,7 +927,7 @@ void srte_candidate_unset_bandwidth(struct srte_candidate *candidate)
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG("SR-TE(%s, %u): candidate %s config bandwidth unset",
 			  endpoint, policy->color, candidate->name);
 	UNSET_FLAG(candidate->flags, F_CANDIDATE_HAS_BANDWIDTH);
@@ -829,7 +950,7 @@ void srte_lsp_unset_bandwidth(struct srte_lsp *lsp)
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG("SR-TE(%s, %u): candidate %s lsp bandwidth unset",
 			  endpoint, policy->color, candidate->name);
 	UNSET_FLAG(lsp->flags, F_CANDIDATE_HAS_BANDWIDTH);
@@ -858,7 +979,7 @@ void srte_candidate_set_metric(struct srte_candidate *candidate,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s %sconfig metric %s (%u) set to %f (is-bound: %s; is_computed: %s)",
 		endpoint, policy->color, candidate->name,
@@ -893,7 +1014,7 @@ void srte_lsp_set_metric(struct srte_lsp *lsp,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s %slsp metric %s (%u) set to %f (is-bound: %s; is_computed: %s)",
 		endpoint, policy->color, candidate->name,
@@ -929,7 +1050,7 @@ void srte_candidate_unset_metric(struct srte_candidate *candidate,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s config metric %s (%u) unset",
 		endpoint, policy->color, candidate->name,
@@ -955,7 +1076,7 @@ void srte_lsp_unset_metric(struct srte_lsp *lsp,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG(
 		"SR-TE(%s, %u): candidate %s lsp metric %s (%u) unset",
 		endpoint, policy->color, candidate->name,
@@ -985,7 +1106,7 @@ void srte_candidate_set_objfun(struct srte_candidate *candidate, bool required,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 
 	candidate->objfun = type;
 	SET_FLAG(candidate->flags, F_CANDIDATE_HAS_OBJFUN);
@@ -1007,7 +1128,7 @@ void srte_candidate_unset_objfun(struct srte_candidate *candidate)
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 
 	UNSET_FLAG(candidate->flags, F_CANDIDATE_HAS_OBJFUN);
 	UNSET_FLAG(candidate->flags, F_CANDIDATE_REQUIRED_OBJFUN);
@@ -1060,7 +1181,7 @@ void srte_candidate_set_affinity_filter(struct srte_candidate *candidate,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 
 	assert(type > AFFINITY_FILTER_UNDEFINED);
 	assert(type <= MAX_AFFINITY_FILTER_TYPE);
@@ -1086,7 +1207,7 @@ void srte_candidate_unset_affinity_filter(struct srte_candidate *candidate,
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 
 	assert(type > AFFINITY_FILTER_UNDEFINED);
 	assert(type <= MAX_AFFINITY_FILTER_TYPE);
@@ -1107,12 +1228,20 @@ void srte_candidate_unset_affinity_filter(struct srte_candidate *candidate,
  * @return The candidate path if found, NULL otherwise
  */
 struct srte_candidate *srte_candidate_find(struct srte_policy *policy,
-					   uint32_t preference)
+					   uint32_t preference, const char *name)
 {
 	struct srte_candidate search;
 
 	search.preference = preference;
+	strlcpy(search.name, name, sizeof(search.name));
 	return RB_FIND(srte_candidate_head, &policy->candidate_paths, &search);
+}
+struct srte_candidate_group *srte_candidate_group_find(struct srte_policy *policy,
+					   uint32_t preference)
+{
+	struct srte_candidate_group search;
+	search.preference = preference;
+	return RB_FIND(srte_candidate_group_head, &policy->candidate_groups, &search);
 }
 
 /**
@@ -1143,7 +1272,7 @@ void srte_candidate_status_update(struct srte_candidate *candidate, int status)
 	struct srte_policy *policy = candidate->policy;
 	char endpoint[ENDPOINT_STR_LENGTH];
 
-	ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 	PATH_POLICY_DEBUG("SR-TE(%s, %u): zebra updated status to %d", endpoint,
 			  policy->color, status);
 	switch (status) {
@@ -1505,4 +1634,63 @@ bool is_refcounter_retain(struct srte_segment_list *segment_list)
 		return (segment_list->refcount > 0);
 	}
 	return false;
+}
+void cpath_status_init(struct srte_policy *policy, struct srte_candidate *candidate)
+{
+	if (CHECK_FLAG(policy->flags, F_POLICY_CONF_BFD))
+	{
+        candidate->status = SRTE_DETECT_DOWN;
+	}
+	else
+	{
+        candidate->status = SRTE_DETECT_NONE;
+	}
+}
+static void cpath_status_up_handle(struct srte_candidate *candidate)
+{
+	switch (candidate->status)
+	{
+	case SRTE_DETECT_DOWN:
+		candidate->status=SRTE_DETECT_UP;
+		break;
+	case SRTE_DETECT_NONE:
+		candidate->status=SRTE_DETECT_UP;
+		break;
+	case SRTE_DETECT_UP:
+		break;
+	default:
+		break;
+	}
+}
+static void cpath_status_down_handle(struct srte_candidate *candidate)
+{
+	switch (candidate->status)
+	{
+	case SRTE_DETECT_DOWN:
+		break;
+	case SRTE_DETECT_NONE:
+		candidate->status=SRTE_DETECT_DOWN;
+	case SRTE_DETECT_UP:
+		candidate->status=SRTE_DETECT_DOWN;
+		break;
+	default:
+		break;
+	}
+}
+void cpath_status_refresh(struct srte_candidate *candidate, enum detection_status sta)
+{
+	switch (sta)
+	{
+	case SRTE_DETECT_DOWN:
+		cpath_status_down_handle(candidate);
+		break;
+	case SRTE_DETECT_UP:
+		cpath_status_up_handle(candidate);
+		break;
+	case SRTE_DETECT_NONE:
+		candidate->status = SRTE_DETECT_NONE;
+		break;
+	default:
+		break;
+	}
 }

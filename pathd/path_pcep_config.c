@@ -138,9 +138,11 @@ struct path *candidate_to_path(struct srte_candidate *candidate)
 							 F_METRIC_IS_COMPUTED);
 		}
 	}
+	struct ipaddr endpoint;
+	prefix2ipaddr(&policy->endpoint, &endpoint);
 	*path = (struct path){
 		.nbkey = (struct lsp_nb_key){.color = policy->color,
-					     .endpoint = policy->endpoint,
+					     .endpoint = endpoint,
 					     .preference =
 						     candidate->preference},
 		.create_origin = lsp->protocol_origin,
@@ -323,15 +325,17 @@ int path_pcep_config_initiate_path(struct path *path)
 
 		candidate = lookup_candidate(&path->nbkey);
 		if (!candidate) {
+			struct prefix endpoint;
+			addr2prefix(&path->nbkey.endpoint, &endpoint);
 			policy = srte_policy_add(
-				path->nbkey.color, &path->nbkey.endpoint,
+				path->nbkey.color, &endpoint,
 				SRTE_ORIGIN_PCEP, path->originator);
 			strlcpy(policy->name, path->name, sizeof(policy->name));
 			policy->binding_sid = path->binding_sid;
 			SET_FLAG(policy->flags, F_POLICY_NEW);
 			candidate = srte_candidate_add(
 				policy, path->nbkey.preference,
-				SRTE_ORIGIN_PCEP, path->originator);
+				SRTE_ORIGIN_PCEP, path->originator, path->name);
 			candidate->policy->srp_id = path->srp_id;
 			strlcpy(candidate->name, path->name,
 				sizeof(candidate->name));
@@ -463,10 +467,15 @@ int path_pcep_config_update_path(struct path *path)
 struct srte_candidate *lookup_candidate(struct lsp_nb_key *key)
 {
 	struct srte_policy *policy = NULL;
-	policy = srte_policy_find(key->color, &key->endpoint);
+	struct prefix endpoint;
+	endpoint.family = AF_INET6;
+	endpoint.prefixlen = IPV6_MAX_BITLEN;
+	endpoint.u.prefix6 = key->endpoint.ipaddr_v6;
+	policy = srte_policy_find(key->color, &endpoint);
 	if (policy == NULL)
 		return NULL;
-	return srte_candidate_find(policy, key->preference);
+#define MPLS_CPATH_NAME_STUB "-"
+	return srte_candidate_find(policy, key->preference, MPLS_CPATH_NAME_STUB);
 }
 
 char *candidate_name(struct srte_candidate *candidate)

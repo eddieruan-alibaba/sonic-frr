@@ -22,6 +22,7 @@
 #include "lib/memory.h"
 #include "lib/mpls.h"
 #include "lib/ipaddr.h"
+#include "lib/bfd.h"
 #include "lib/srte.h"
 #include "lib/hook.h"
 #include "lib/prefix.h"
@@ -173,6 +174,11 @@ enum srte_segment_sid_type {
 	SRTE_SEGMENT_SID_TYPE_V6 = 1,
 	SRTE_SEGMENT_SID_TYPE_MPLS = 2,
 };
+enum detection_status {
+	SRTE_DETECT_DOWN,
+	SRTE_DETECT_UP,
+	SRTE_DETECT_NONE,
+};
 struct srte_segment_list;
 
 struct srte_segment_entry {
@@ -226,7 +232,7 @@ struct srte_segment_list {
 	/* Nexthops. */
 	struct srte_segment_entry_head segments;
 
-    /* reference count */
+    enum detection_status status;
     uint16_t refcount;
 
 	/* Status flags. */
@@ -283,9 +289,11 @@ struct srte_lsp {
 /* Configured candidate path */
 struct srte_candidate {
 	RB_ENTRY(srte_candidate) entry;
+	RB_ENTRY(srte_candidate) perf_entry;
 
 	/* Backpointer to SR Policy */
 	struct srte_policy *policy;
+	struct srte_candidate_group *group;
 
 	/* The LSP associated with this candidate path. */
 	struct srte_lsp *lsp;
@@ -310,6 +318,7 @@ struct srte_candidate {
 
 	/* The Type (explicit or dynamic) */
 	enum srte_candidate_type type;
+    enum detection_status status;
 
 	/* Flags. */
 	uint32_t flags;
@@ -339,6 +348,8 @@ struct srte_candidate {
 
 	/* Hooks delaying timer */
 	struct thread *hook_timer;
+	uint32_t weight;
+	char bfd_name[BFD_NAME_SIZE + 1];
 };
 
 RB_HEAD(srte_candidate_head, srte_candidate);
@@ -346,6 +357,30 @@ RB_PROTOTYPE(srte_candidate_head, srte_candidate, entry, srte_candidate_compare)
 
 #define ENDPOINT_STR_LENGTH IPADDR_STRING_SIZE
 
+RB_HEAD(srte_candidate_pref_head, srte_candidate);
+RB_PROTOTYPE(srte_candidate_pref_head, srte_candidate, perf_entry, srte_candidate_compare)
+struct srte_candidate_group {
+	RB_ENTRY(srte_candidate_group) entry;
+	/* Backpointer to SR Policy */
+	struct srte_policy *policy;
+
+	/* Administrative preference. */
+	uint32_t preference;
+
+	/* Candidate Paths */
+	struct srte_candidate_pref_head candidate_paths;
+
+	/* Candidate Group status  */
+	uint32_t up_cpath_num;
+	enum detection_status status;
+
+	uint32_t flags;
+#define F_CPATH_GROUP_BEST 0x0001
+#define F_CPATH_GROUP_MODIFIED 0x0002
+#define F_CPATH_GROUP_STATE_CHANGE 0x0004
+};
+RB_HEAD(srte_candidate_group_head, srte_candidate_group);
+RB_PROTOTYPE(srte_candidate_group_head, srte_candidate_group, entry, srte_candidate_group_compare)
 struct srte_policy {
 	RB_ENTRY(srte_policy) entry;
 
@@ -353,7 +388,7 @@ struct srte_policy {
 	uint32_t color;
 
 	/* Endpoint */
-	struct ipaddr endpoint;
+	struct prefix endpoint;
 
 	/* Name */
 	char name[64];
@@ -373,13 +408,20 @@ struct srte_policy {
 	/* Best candidate path. */
 	struct srte_candidate *best_candidate;
 
+	/* Best candidate path. */
+	struct srte_candidate_group *best_candidate_group;
 	/* Candidate Paths */
 	struct srte_candidate_head candidate_paths;
+	struct srte_candidate_group_head candidate_groups;
+	uint32_t up_cpath_group_num;
 	/* Status flags. */
 	uint16_t flags;
 #define F_POLICY_NEW 0x0002
 #define F_POLICY_MODIFIED 0x0004
 #define F_POLICY_DELETED 0x0008
+#define F_POLICY_CONF_BFD 0x0010
+#define F_POLICY_TUNNEL_ATTR_UPDATE 0x0020
+    struct sbfd_session_config *bfd_config;
 	/* SRP id for PcInitiated support */
 	int srp_id;
 };
@@ -415,11 +457,12 @@ int srte_segment_entry_set_nai(struct srte_segment_entry *segment,
 void srte_segment_set_local_modification(struct srte_segment_list *s_list,
 					 struct srte_segment_entry *s_entry,
 					 uint32_t ted_sid);
-struct srte_policy *srte_policy_add(uint32_t color, struct ipaddr *endpoint,
+struct srte_policy *srte_policy_add(uint32_t color, struct prefix *endpoint,
 				    enum srte_protocol_origin origin,
 				    const char *originator);
 void srte_policy_del(struct srte_policy *policy);
-struct srte_policy *srte_policy_find(uint32_t color, struct ipaddr *endpoint);
+struct srte_policy *srte_policy_find(uint32_t color, struct prefix *endpoint);
+struct srte_policy *srte_policy_find_by_name(const char *name);
 int srte_policy_update_ted_sid(void);
 void srte_policy_update_binding_sid(struct srte_policy *policy,
 				    uint32_t binding_sid);
@@ -429,7 +472,12 @@ void srte_policy_apply_changes(struct srte_policy *policy);
 struct srte_candidate *srte_candidate_add(struct srte_policy *policy,
 					  uint32_t preference,
 					  enum srte_protocol_origin origin,
-					  const char *originator);
+					  const char *originator,
+					  const char *name);
+void srte_candidate_add_group(struct srte_policy *policy,
+					  struct srte_candidate *candidate);
+struct srte_candidate_group *srte_candidate_group_add(struct srte_policy *policy,
+					  uint32_t preference);
 void srte_candidate_del(struct srte_candidate *candidate);
 void srte_candidate_set_bandwidth(struct srte_candidate *candidate,
 				  float bandwidth, bool required);
@@ -457,6 +505,8 @@ void srte_lsp_set_metric(struct srte_lsp *lsp,
 void srte_lsp_unset_metric(struct srte_lsp *lsp,
 			   enum srte_candidate_metric_type type);
 struct srte_candidate *srte_candidate_find(struct srte_policy *policy,
+					   uint32_t preference, const char *name);
+struct srte_candidate_group *srte_candidate_group_find(struct srte_policy *policy,
 					   uint32_t preference);
 struct srte_segment_entry *
 srte_segment_entry_find(struct srte_segment_list *segment_list, uint32_t index);
@@ -510,4 +560,6 @@ void refcounter_init(struct srte_segment_list *segment_list);
 void refcounter_increase(struct srte_segment_list *segment_list);
 void refcounter_decrease(struct srte_segment_list *segment_list);
 bool is_refcounter_retain(struct srte_segment_list *segment_list);
+void cpath_status_init(struct srte_policy *policy, struct srte_candidate *candidate);
+void cpath_status_refresh(struct srte_candidate *candidate, enum detection_status sta);
 #endif /* _FRR_PATHD_H_ */

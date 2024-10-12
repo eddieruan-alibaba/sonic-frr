@@ -143,7 +143,7 @@ struct seg6_sid {
 	struct prefix_ipv6 ipv6Addr;
     char sidstr[PREFIX_STRLEN];
 	char ifname[INTERFACE_NAMSIZ];
-	struct in6_addr nexthop;
+	struct ipaddr nexthop;
 };
 struct seg6_sid_msg {
     char locator_name[SRV6_LOCNAME_SIZE];

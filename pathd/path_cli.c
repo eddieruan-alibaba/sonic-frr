@@ -129,7 +129,7 @@ DEFPY(show_srte_policy,
 		char endpoint[ENDPOINT_STR_LENGTH];
 		char binding_sid[16] = "-";
 
-		ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
+		prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
 		if (policy->binding_sid != MPLS_LABEL_NONE)
 			snprintf(binding_sid, sizeof(binding_sid), "%u",
 				 policy->binding_sid);
@@ -149,6 +149,43 @@ DEFPY(show_srte_policy,
 	ttable_del(tt);
 
 	return CMD_SUCCESS;
+}
+static void srte_policy_detail_display(struct srte_policy *policy, struct vty *vty)
+{
+	struct srte_candidate *candidate, *safe_cp;
+	struct srte_candidate_group *cpath_group, *safe_cpg;
+	char endpoint[46];
+	char binding_sid[46] = "-";
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	if (policy->binding_sid != MPLS_LABEL_NONE)
+		snprintf(binding_sid, sizeof(binding_sid), "%u",
+				policy->binding_sid);
+	vty_out(vty,
+		"Endpoint: %s  Color: %u  Name: %s  BSID: %s  Status: %s\n",
+		endpoint, policy->color, policy->name, binding_sid,
+		policy->status == SRTE_POLICY_STATUS_UP ? "Active" : "Inactive");
+	RB_FOREACH_SAFE (cpath_group, srte_candidate_group_head, &policy->candidate_groups, safe_cpg) {
+		vty_out(vty,
+			"  %s Preference: %d  ActiveMembers: %d  Status: %s\n",
+			CHECK_FLAG(cpath_group->flags, F_CPATH_GROUP_BEST) ? "*" : " ", 
+			cpath_group->preference,
+			cpath_group->up_cpath_num,
+			cpath_group->status == SRTE_DETECT_UP ? "UP" : "DOWN");
+		RB_FOREACH_SAFE (candidate, srte_candidate_pref_head, &cpath_group->candidate_paths, safe_cp) {
+			char binding_bfd[128] = {0};
+			bool has_bfd = false;
+			binding_bfd[0] = '-';
+			vty_out(vty,
+				"       Candidate Name: %s  Type: %s  Segment-List: %s  Weight: %d  BindingBFD: %s  Status: %s\n",
+				candidate->name,
+				"explicit",
+				candidate->segment_list ? candidate->segment_list->name : "-",
+				candidate->weight,
+				binding_bfd,
+				has_bfd ? (candidate->status == SRTE_DETECT_UP ? "UP" : (candidate->status == SRTE_DETECT_NONE ?"NONE": "DOWN")) : "UP");
+		}
+	}
+	vty_out(vty, "\n");
 }
 
 
@@ -172,54 +209,59 @@ DEFPY(show_srte_policy_detail,
 
 	vty_out(vty, "\n");
 	RB_FOREACH (policy, srte_policy_head, &srte_policies) {
-		struct srte_candidate *candidate;
-		char endpoint[ENDPOINT_STR_LENGTH];
-		char binding_sid[16] = "-";
-		char *segment_list_info;
-		static char undefined_info[] = "(undefined)";
-		static char created_by_pce_info[] = "(created by PCE)";
+        srte_policy_detail_display(policy, vty);
+	}
 
+	return CMD_SUCCESS;
+}
 
-		ipaddr2str(&policy->endpoint, endpoint, sizeof(endpoint));
-		if (policy->binding_sid != MPLS_LABEL_NONE)
-			snprintf(binding_sid, sizeof(binding_sid), "%u",
-				 policy->binding_sid);
-		vty_out(vty,
-			"Endpoint: %s  Color: %u  Name: %s  BSID: %s  Status: %s\n",
-			endpoint, policy->color, policy->name, binding_sid,
-			policy->status == SRTE_POLICY_STATUS_UP ? "Active"
-								: "Inactive");
+DEFPY(show_srte_filter_policy_detail,
+      show_srte_filter_policy_detail_cmd,
+      "show sr-te policy color (0-4294967295)$num endpoint X:X::X:X$addr detail",
+      SHOW_STR
+      "SR-TE info\n"
+      "SR-TE Policy\n"
+	  "SR Policy color\n"
+	  "SR Policy color value\n"
+	  "SR Policy endpoint\n"
+	  "SR Policy endpoint IPv6 address\n"
+      "Show a detailed summary\n")
+{
+	struct srte_policy *policy;
 
-		RB_FOREACH (candidate, srte_candidate_head,
-			    &policy->candidate_paths) {
-			struct srte_segment_list *segment_list;
+	struct prefix endpoint;
+	(void)str2prefix(addr_str, &endpoint);
 
-			segment_list = candidate->lsp->segment_list;
-			if (segment_list == NULL)
-				segment_list_info = undefined_info;
-			else if (segment_list->protocol_origin
-				 == SRTE_ORIGIN_PCEP)
-				segment_list_info = created_by_pce_info;
-			else
-				segment_list_info =
-					candidate->lsp->segment_list->name;
-
-			vty_out(vty,
-				"  %s Preference: %d  Name: %s  Type: %s  Segment-List: %s  Protocol-Origin: %s\n",
-				CHECK_FLAG(candidate->flags, F_CANDIDATE_BEST)
-					? "*"
-					: " ",
-				candidate->preference, candidate->name,
-				candidate->type == SRTE_CANDIDATE_TYPE_EXPLICIT
-					? "explicit"
-					: "dynamic",
-				segment_list_info,
-				srte_origin2str(
-					candidate->lsp->protocol_origin));
+    policy = srte_policy_find(num, &endpoint);
+	if (!policy)
+	{
+		vty_out(vty, "No Matched SR Policies to display.\n\n");
+		return CMD_SUCCESS;
 		}
 
 		vty_out(vty, "\n");
+    srte_policy_detail_display(policy, vty);
+	return CMD_SUCCESS;
+}
+DEFPY(show_srte_policy_by_name_detail,
+      show_srte_policy_by_name_detail_cmd,
+      "show sr-te policy name WORD$name detail",
+      SHOW_STR
+      "SR-TE info\n"
+      "SR-TE Policy\n"
+	  "SR Policy name\n"
+	  "SR Policy name\n"
+      "Show a detailed summary\n")
+{
+	struct srte_policy *policy;
+    policy = srte_policy_find_by_name(name);
+	if (!policy)
+	{
+		vty_out(vty, "No Matched SR Policies to display.\n\n");
+		return CMD_SUCCESS;
 	}
+	vty_out(vty, "\n");
+    srte_policy_detail_display(policy, vty);
 
 	return CMD_SUCCESS;
 }
@@ -640,15 +682,16 @@ void cli_show_srte_segment_list_segment(struct vty *vty,
 /*
  * XPath: /frr-pathd:pathd/policy
  */
-DEFPY_NOSH(
+DEFPY_YANG_NOSH(
 	srte_policy,
 	srte_policy_cmd,
-	"policy color (0-4294967295)$num endpoint <A.B.C.D|X:X::X:X>$endpoint",
+	"policy color (0-4294967295)$num endpoint <A.B.C.D|X:X::X:X|X:X::X:X/M>$endpoint",
 	"Segment Routing Policy\n"
 	"SR Policy color\n"
 	"SR Policy color value\n"
 	"SR Policy endpoint\n"
 	"SR Policy endpoint IPv4 address\n"
+	"SR Policy endpoint IPv6 address\n"
 	"SR Policy endpoint IPv6 address\n")
 {
 	char xpath[XPATH_POLICY_BASELEN];
@@ -656,7 +699,7 @@ DEFPY_NOSH(
 
 	snprintf(xpath, sizeof(xpath),
 		 "/frr-pathd:pathd/srte/policy[color='%s'][endpoint='%s']",
-		 num_str, endpoint_str);
+		 num_str, endpoint);
 	nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
 
 	ret = nb_cli_apply_changes(vty, NULL);
@@ -666,22 +709,23 @@ DEFPY_NOSH(
 	return ret;
 }
 
-DEFPY(srte_no_policy,
+DEFPY_YANG(srte_no_policy,
       srte_no_policy_cmd,
-      "no policy color (0-4294967295)$num endpoint <A.B.C.D|X:X::X:X>$endpoint",
+      "no policy color (0-4294967295)$num endpoint <A.B.C.D|X:X::X:X|X:X::X:X/M>$endpoint",
       NO_STR
       "Segment Routing Policy\n"
       "SR Policy color\n"
       "SR Policy color value\n"
       "SR Policy endpoint\n"
       "SR Policy endpoint IPv4 address\n"
+	  "SR Policy endpoint IPv6 address\n"
       "SR Policy endpoint IPv6 address\n")
 {
 	char xpath[XPATH_POLICY_BASELEN];
 
 	snprintf(xpath, sizeof(xpath),
 		 "/frr-pathd:pathd/srte/policy[color='%s'][endpoint='%s']",
-		 num_str, endpoint_str);
+		 num_str, endpoint);
 	nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
 
 	return nb_cli_apply_changes(vty, NULL);
@@ -769,10 +813,10 @@ void cli_show_srte_policy_binding_sid(struct vty *vty,
 /*
  * XPath: /frr-pathd:pathd/srte/policy/candidate-path
  */
-DEFPY(srte_policy_candidate_exp,
+DEFPY_YANG(srte_policy_candidate_exp,
       srte_policy_candidate_exp_cmd,
       "candidate-path preference (0-4294967295)$preference name WORD$name \
-	 explicit segment-list WORD$list_name",
+	 explicit segment-list WORD$list_name [weight$has_weight (1-4294967295)$weight_val]",
       "Segment Routing Policy Candidate Path\n"
       "Segment Routing Policy Candidate Path Preference\n"
       "Administrative Preference\n"
@@ -780,17 +824,31 @@ DEFPY(srte_policy_candidate_exp,
       "Symbolic Name\n"
       "Explicit Path\n"
       "List of SIDs\n"
-      "Name of the Segment List\n")
+      "Name of the Segment List\n"
+	  "Set Weight of Candidate Path\n"
+	  "Weight Value\n")
 {
-	nb_cli_enqueue_change(vty, ".", NB_OP_CREATE, preference_str);
-	nb_cli_enqueue_change(vty, "./name", NB_OP_MODIFY, name);
+	char xpath[XPATH_MAXLEN + XPATH_CANDIDATE_BASELEN];
+	snprintf(xpath, sizeof(xpath),
+	    "%s/candidate-path[preference='%s'][name='%s']",
+		 VTY_CURR_XPATH, preference_str, name);
+	nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
+	// nb_cli_enqueue_change(vty, "./name", NB_OP_MODIFY, name);
 	nb_cli_enqueue_change(vty, "./protocol-origin", NB_OP_MODIFY, "local");
 	nb_cli_enqueue_change(vty, "./originator", NB_OP_MODIFY, "config");
 	nb_cli_enqueue_change(vty, "./type", NB_OP_MODIFY, "explicit");
-	nb_cli_enqueue_change(vty, "./segment-list-name", NB_OP_MODIFY,
-			      list_name);
-	return nb_cli_apply_changes(vty, "./candidate-path[preference='%s']",
-				    preference_str);
+	nb_cli_enqueue_change(vty, "./segment-list-name", NB_OP_MODIFY, list_name);
+	if (has_weight != NULL)
+	{
+		nb_cli_enqueue_change(vty, "./weight", NB_OP_MODIFY, weight_val_str);
+	}
+	else
+	{
+        nb_cli_enqueue_change(vty, "./weight", NB_OP_MODIFY, "1");
+	}
+
+	return nb_cli_apply_changes(vty, "./candidate-path[preference='%s'][name='%s']",
+				    preference_str, name);
 }
 
 DEFPY_NOSH(
@@ -972,12 +1030,12 @@ DEFPY(srte_candidate_no_metric,
 	return nb_cli_apply_changes(vty, NULL);
 }
 
-DEFPY(srte_policy_no_candidate,
+DEFPY_YANG(srte_policy_no_candidate,
       srte_policy_no_candidate_cmd,
       "no candidate-path\
 	preference (0-4294967295)$preference\
-	[name WORD\
-	<\
+	name WORD$name\
+	[<\
 	  explicit segment-list WORD\
 	  |dynamic\
 	>]",
@@ -994,8 +1052,8 @@ DEFPY(srte_policy_no_candidate,
 {
 	nb_cli_enqueue_change(vty, ".", NB_OP_DESTROY, NULL);
 
-	return nb_cli_apply_changes(vty, "./candidate-path[preference='%s']",
-				    preference_str);
+	return nb_cli_apply_changes(vty, "./candidate-path[preference='%s'][name='%s']",
+				    preference_str, name);
 }
 
 DEFPY(srte_candidate_objfun,
@@ -1440,6 +1498,8 @@ void path_cli_init(void)
 
 	install_element(ENABLE_NODE, &debug_path_policy_cmd);
 	install_element(CONFIG_NODE, &debug_path_policy_cmd);
+	install_element(ENABLE_NODE, &show_srte_filter_policy_detail_cmd);
+	install_element(ENABLE_NODE, &show_srte_policy_by_name_detail_cmd);
 	install_element(ENABLE_NODE, &show_segment_list_detail_cmd);
 	install_element(ENABLE_NODE, &show_segment_list_by_name_detail_cmd);
 

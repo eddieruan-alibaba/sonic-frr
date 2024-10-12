@@ -936,7 +936,6 @@ int str2prefix(const char *str, struct prefix *p)
 
 	return 0;
 }
-
 static const char *prefixevpn_ead2str(const struct prefix_evpn *p, char *str,
 				      int size)
 {
@@ -1102,6 +1101,21 @@ const char *prefix2str(union prefixconstptr pu, char *str, int size)
 	return str;
 }
 
+int prefix2ipaddr(struct prefix *p, struct ipaddr *ip)
+{
+    memset(ip, 0, sizeof(struct ipaddr));
+    if (p->family == AF_INET) {
+        ip->ipa_type = IPADDR_V4;
+        memcpy(&(ip->ipaddr_v4), &(p->u.prefix4),
+               sizeof(struct in_addr));
+    } else if (p->family == AF_INET6) {
+        ip->ipa_type = IPADDR_V6;
+        memcpy(&(ip->ipaddr_v6), &(p->u.prefix6),
+               sizeof(struct in6_addr));
+    } else
+        return -1;
+    return 0;
+}
 static ssize_t prefixhost2str(struct fbuf *fbuf, union prefixconstptr pu)
 {
 	const struct prefix *p = pu.p;

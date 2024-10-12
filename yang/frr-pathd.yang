@@ -204,7 +204,7 @@ module frr-pathd {
           unique "name";
           description
             "List of Candidate Paths of the SR Policy.";
-          key "preference";
+          key "preference name";
           leaf preference {
             type uint32;
             description
@@ -252,6 +252,12 @@ module frr-pathd {
                 value 2;
               }
             }
+          }
+          leaf weight {
+            type uint32;
+            default 1;
+            description
+              "Weight of the Candidate Path.";
           }
           leaf segment-list-name {
             type leafref {

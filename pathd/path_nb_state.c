@@ -159,7 +159,7 @@ const void *pathd_srte_policy_candidate_path_lookup_entry(
 
 	preference = yang_str2uint32(args->keys->key[0]);
 
-	return srte_candidate_find(policy, preference);
+	return srte_candidate_find(policy, preference, args->keys->key[1]);
 }
 
 /*

@@ -355,13 +355,19 @@ int pathd_srte_policy_create(struct nb_cb_create_args *args)
 {
 	struct srte_policy *policy;
 	uint32_t color;
-	struct ipaddr endpoint;
+	struct prefix endpoint;
 
 	if (args->event != NB_EV_APPLY)
 		return NB_OK;
 
 	color = yang_dnode_get_uint32(args->dnode, "./color");
-	yang_dnode_get_ip(&endpoint, args->dnode, "./endpoint");
+	yang_dnode_get_prefix(&endpoint, args->dnode, "./endpoint");
+	if (endpoint.family == AF_INET && endpoint.u.prefix4.s_addr == INADDR_ANY
+		&& endpoint.prefixlen == IPV4_MAX_BITLEN)
+		endpoint.prefixlen = 0;
+	if (endpoint.family == AF_INET6 && IPV6_ADDR_SAME(&endpoint.u.prefix6, &in6addr_any)
+		&& endpoint.prefixlen == IPV6_MAX_BITLEN)
+		endpoint.prefixlen = 0;
 	policy = srte_policy_add(color, &endpoint, SRTE_ORIGIN_LOCAL, NULL);
 
 	nb_running_set_entry(args->dnode, policy);
@@ -477,15 +483,19 @@ int pathd_srte_policy_candidate_path_create(struct nb_cb_create_args *args)
 {
 	struct srte_policy *policy;
 	struct srte_candidate *candidate;
-	uint32_t preference;
+	uint32_t preference, weight;
+	const char *name;
 
 	if (args->event != NB_EV_APPLY)
 		return NB_OK;
 
 	policy = nb_running_get_entry(args->dnode, NULL, true);
 	preference = yang_dnode_get_uint32(args->dnode, "./preference");
-	candidate =
-		srte_candidate_add(policy, preference, SRTE_ORIGIN_LOCAL, NULL);
+	name = yang_dnode_get_string(args->dnode, "./name");
+
+	candidate = srte_candidate_add(policy, preference, SRTE_ORIGIN_LOCAL, NULL, name);
+	weight = yang_dnode_get_uint32(args->dnode, "./weight");
+	candidate->weight = weight;
 	nb_running_set_entry(args->dnode, candidate);
 	SET_FLAG(candidate->flags, F_CANDIDATE_NEW);
 
@@ -886,5 +896,21 @@ int pathd_srte_policy_candidate_path_bandwidth_destroy(
 	assert(args->context != NULL);
 	candidate = nb_running_get_entry(args->dnode, NULL, true);
 	srte_candidate_unset_bandwidth(candidate);
+	return NB_OK;
+}
+int pathd_srte_policy_candidate_path_weight_modify(struct nb_cb_modify_args *args)
+{
+	struct srte_candidate *candidate;
+	uint32_t weight;
+
+	if (args->event != NB_EV_APPLY)
+		return NB_OK;
+
+	candidate = nb_running_get_entry(args->dnode, NULL, true);
+	weight = yang_dnode_get_uint32(args->dnode, NULL);
+	candidate->weight = weight;
+
+	SET_FLAG(candidate->flags, F_CANDIDATE_MODIFIED);
+
 	return NB_OK;
 }
