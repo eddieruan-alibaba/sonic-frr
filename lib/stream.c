@@ -670,6 +670,26 @@ bool stream_get_ipaddr(struct stream *s, struct ipaddr *ip)
 	return true;
 }
 
+bool stream_get_prefix6(struct stream *s, struct prefix *p)
+{
+	uint8_t c;
+	uint16_t plen = 0;
+	STREAM_VERIFY_SANE(s);
+	if (STREAM_READABLE(s) < sizeof(uint8_t)) {
+		STREAM_BOUND_WARN2(s, "get prefix len");
+		return false;
+	}
+	c = stream_getc(s);
+	p->prefixlen = c;
+	plen = PSIZE(p->prefixlen);
+	if (STREAM_READABLE(s) < plen) {
+		STREAM_BOUND_WARN2(s, "get prefix");
+		return false;
+	}
+	memcpy(&p->u.prefix, s->data + s->getp, plen);
+	s->getp += plen;
+	return true;
+}
 float stream_getf(struct stream *s)
 {
 	union {

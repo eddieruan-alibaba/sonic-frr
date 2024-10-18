@@ -50,6 +50,12 @@ RB_HEAD(zebra_router_table_head, zebra_router_table);
 RB_PROTOTYPE(zebra_router_table_head, zebra_router_table,
 	     zebra_router_table_entry, zebra_router_table_entry_compare)
 
+PREDECL_DLIST(nhg_update_entry_list);
+struct nhg_update_entry {
+	struct nhg_hash_entry *nhe;
+	struct nhg_update_entry_list_item list;
+};
+DECLARE_DLIST(nhg_update_entry_list, struct nhg_update_entry, list);
 /* RPF lookup behaviour */
 enum multicast_mode {
 	MCAST_NO_CONFIG = 0,  /* MIX_MRIB_FIRST, but no show in config write */
@@ -224,6 +230,7 @@ struct zebra_router {
 	bool asic_offloaded;
 	bool notify_on_ack;
 
+	struct nhg_update_entry_list_head nhg_update_list;
 	/*
 	 * If the asic is notifying us about successful nexthop
 	 * allocation/control.  Some developers have made their
@@ -305,6 +312,8 @@ static inline bool zebra_router_in_shutdown(void)
 /* zebra_northbound.c */
 extern const struct frr_yang_module_info frr_zebra_info;
 
+extern void nhg_update_entry_free(struct nhg_update_entry *nhg_entry);
+extern struct nhg_update_entry *nhg_update_entry_create(void);
 #ifdef __cplusplus
 }
 #endif

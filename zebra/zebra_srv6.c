@@ -484,6 +484,16 @@ void zebra_srv6_local_sid_add(struct srv6_locator *locator, struct seg6_sid *sid
     ctx.function_bits_length = locator->function_bits_length;
     ctx.argument_bits_length = locator->argument_bits_length;
     strncpy(ctx.vrfName, sid->vrfName, VRF_NAMSIZ + 1);
+	if(sid->ifname)
+		strncpy(ctx.ifname,sid->ifname,INTERFACE_NAMSIZ);
+	if(sid->nexthop.ipa_type==IPADDR_V4)
+	{
+		ctx.nh4 = sid->nexthop.ipaddr_v4; 
+	}
+	else if(sid->nexthop.ipa_type == IPADDR_V6)
+	{
+		ctx.nh6 = sid->nexthop.ipaddr_v6;
+	}
 
     if (CHECK_FLAG(vrf->status, VRF_ACTIVE)) {
 		zebra_route_add(&result_sid, vrf, act, &ctx);

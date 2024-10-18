@@ -144,6 +144,16 @@ struct nexthop *nexthop_exists(const struct nexthop_group *nhg,
 	return NULL;
 }
 
+struct nexthop *nexthop_exists_in_list(const struct nexthop *head,
+				const struct nexthop *nh)
+{
+	struct nexthop *nexthop;
+	for (nexthop = head; nexthop; nexthop = nexthop->next) {
+		if (nexthop_same(nh, nexthop))
+			return nexthop;
+	}
+	return NULL;
+}
 /*
  * Helper that locates a nexthop in an nhg config list. Note that
  * this uses a specific matching / equality rule that's different from
@@ -187,6 +197,13 @@ static struct nexthop *nhg_nh_find(const struct nexthop_group *nhg,
 			break;
 		case NEXTHOP_TYPE_BLACKHOLE:
 			if (nexthop->bh_type != nh->bh_type)
+				continue;
+			break;
+		case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+		case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
+			ret = nexthop_g_addr_cmp(nexthop->type,
+						 &nexthop->gate, &nh->gate);
+			if (ret != 0)
 				continue;
 			break;
 		}
@@ -305,7 +322,7 @@ void _nexthop_add(struct nexthop **target, struct nexthop *nexthop)
 }
 
 /* Add nexthop to sorted list of nexthops */
-static void _nexthop_add_sorted(struct nexthop **head,
+void _nexthop_add_sorted(struct nexthop **head,
 				struct nexthop *nexthop)
 {
 	struct nexthop *position, *prev;
@@ -442,6 +459,24 @@ void _nexthop_del(struct nexthop_group *nhg, struct nexthop *nh)
 	if (nexthop->next)
 		nexthop->next->prev = nexthop->prev;
 
+	nh->prev = NULL;
+	nh->next = NULL;
+}
+void nexthop_del(struct nexthop **head,
+				struct nexthop *nh)
+{
+	struct nexthop *nexthop;
+	for (nexthop = *head; nexthop; nexthop = nexthop->next) {
+		if (nexthop_same(nh, nexthop))
+			break;
+	}
+	assert(nexthop);
+	if (nexthop->prev)
+		nexthop->prev->next = nexthop->next;
+	else
+		*head = nexthop->next;
+	if (nexthop->next)
+		nexthop->next->prev = nexthop->prev;
 	nh->prev = NULL;
 	nh->next = NULL;
 }
@@ -1105,12 +1140,14 @@ void nexthop_group_write_nexthop_simple(struct vty *vty,
 		vty_out(vty, "%s", ifname);
 		break;
 	case NEXTHOP_TYPE_IPV4:
+	case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 		vty_out(vty, "%pI4", &nh->gate.ipv4);
 		break;
 	case NEXTHOP_TYPE_IPV4_IFINDEX:
 		vty_out(vty, "%pI4 %s", &nh->gate.ipv4, ifname);
 		break;
 	case NEXTHOP_TYPE_IPV6:
+	case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 		vty_out(vty, "%pI6", &nh->gate.ipv6);
 		break;
 	case NEXTHOP_TYPE_IPV6_IFINDEX:
@@ -1362,6 +1399,8 @@ void nexthop_group_interface_state_change(struct interface *ifp,
 				switch (nhop.type) {
 				case NEXTHOP_TYPE_IPV4:
 				case NEXTHOP_TYPE_IPV6:
+				case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+				case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 				case NEXTHOP_TYPE_BLACKHOLE:
 					continue;
 				case NEXTHOP_TYPE_IFINDEX:
@@ -1393,6 +1432,8 @@ void nexthop_group_interface_state_change(struct interface *ifp,
 				switch (nh->type) {
 				case NEXTHOP_TYPE_IPV4:
 				case NEXTHOP_TYPE_IPV6:
+				case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+				case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 				case NEXTHOP_TYPE_BLACKHOLE:
 					continue;
 				case NEXTHOP_TYPE_IFINDEX:

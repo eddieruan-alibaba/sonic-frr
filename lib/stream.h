@@ -223,6 +223,7 @@ extern uint64_t stream_getq_from(struct stream *, size_t);
 bool stream_getq2(struct stream *s, uint64_t *q);
 extern uint32_t stream_get_ipv4(struct stream *);
 extern bool stream_get_ipaddr(struct stream *s, struct ipaddr *ip);
+extern bool stream_get_prefix6(struct stream *s, struct prefix *p);
 
 /* IEEE-754 floats */
 extern float stream_getf(struct stream *);

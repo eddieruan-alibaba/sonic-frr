@@ -84,6 +84,7 @@ struct bgp_nexthop_cache {
  *                | INCOMPLETE = 0 | INCOMPLETE = 0
  */
 #define BGP_NEXTHOP_EVPN_INCOMPLETE (1 << 7)
+#define BGP_NEXTHOP_SRV6TE_VALID      (1 << 8)
 
 	uint16_t change_flags;
 
@@ -97,6 +98,7 @@ struct bgp_nexthop_cache {
 
 	uint32_t srte_color;
 	struct prefix prefix;
+	struct prefix resolve_prefix;
 	void *nht_info; /* In BGP, peer session */
 	LIST_HEAD(path_list, bgp_path_info) paths;
 	unsigned int path_count;
@@ -161,6 +163,7 @@ extern struct bgp_nexthop_cache *bnc_find(struct bgp_nexthop_cache_head *tree,
 					  uint32_t srte_color,
 					  ifindex_t ifindex);
 extern void bnc_nexthop_free(struct bgp_nexthop_cache *bnc);
+extern const char *bnc_str(struct bgp_nexthop_cache *bnc, char *buf, int size);
 extern void bgp_scan_init(struct bgp *bgp);
 extern void bgp_scan_finish(struct bgp *bgp);
 extern void bgp_scan_vty_init(void);

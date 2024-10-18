@@ -174,6 +174,11 @@ nexthop_group_active_nexthop_num(const struct nexthop_group *nhg);
 extern uint8_t
 nexthop_group_active_nexthop_num_no_recurse(const struct nexthop_group *nhg);
 
+extern void _nexthop_add_sorted(struct nexthop **head,
+				struct nexthop *nexthop);
+extern struct nexthop *nexthop_exists_in_list(const struct nexthop *head,
+				const struct nexthop *nh);
+extern void nexthop_del(struct nexthop **head, struct nexthop *nh);
 #ifdef __cplusplus
 }
 #endif

@@ -858,6 +858,10 @@ static void dplane_ctx_free_internal(struct zebra_dplane_ctx *ctx)
 		break;
 	case DPLANE_OP_GRE_SET:
 	case DPLANE_OP_INTF_NETCONFIG:
+			break;
+	case DPLANE_OP_SID_LIST_INSTALL:
+	case DPLANE_OP_SID_LIST_UPDATE:
+	case DPLANE_OP_SID_LIST_DELETE:
 		break;
 	}
 }
@@ -2044,13 +2048,6 @@ int dplane_ctx_get_pw_status(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.pw.status;
 }
 
-int dplane_ctx_get_old_flag(const struct zebra_dplane_ctx *ctx)
-{
-	DPLANE_CTX_VALID(ctx);
-
-	return ctx->u.rinfo.zd_old_flag;
-}
-
 void dplane_ctx_set_pw_status(struct zebra_dplane_ctx *ctx, int status)
 {
 	DPLANE_CTX_VALID(ctx);
@@ -3135,20 +3132,24 @@ static int dplane_ctx_tc_filter_init(struct zebra_dplane_ctx *ctx,
 static void dplane_ctx_nexthop_fill_routeinfo(struct zebra_dplane_ctx *ctx, struct nhg_hash_entry *nhe)
 {
 	uint8_t i = 0;
-	uint32_t flags = 0;
 	struct nexthop *nh = NULL;
 	struct nhg_hash_entry *depend = NULL;
 	struct nhg_connected *rb_node_dep = NULL;
 
 	nh = nhe->nhg.nexthop;
-	if (nh->nh_srv6)
-		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+	if (nh->nh_srv6 || CHECK_FLAG(nh->flags, NEXTHOP_FLAG_SRV6_TUNNEL))
+		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NON_RECURSIVE))
-		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
-
-
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
+	{
+		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
+		if (!zebra_nhg_segdepends_is_empty(nhe))
+			ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_seg_nhe2grp(
+				ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+	} else {
 	/* If this is a group, convert it to a grp array of ids */
 	if (!zebra_nhg_depends_is_empty(nhe)
 		&& !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)
@@ -3167,8 +3168,7 @@ static void dplane_ctx_nexthop_fill_routeinfo(struct zebra_dplane_ctx *ctx, stru
 		}
 		ctx->u.rinfo.nhe.nh_grp_count = i;
 	}
-
-	dplane_ctx_set_flags(ctx, flags);
+	}
 }
 /**
  * dplane_ctx_nexthop_init() - Initialize a context block for a nexthop update
@@ -3314,7 +3314,7 @@ int dplane_ctx_sidlist_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 
 	strcpy(ctx->u.sidlist.sidlist_name_, sid_list->sidlist_name_);
 	ctx->u.sidlist.segment_count_ = sid_list->segment_count_;
-	for (int i = 0; i < sid_list->segment_count_; i++) {
+	for (uint32_t i = 0; i < sid_list->segment_count_; i++) {
 		ctx->u.sidlist.segments_[i].index_ = sid_list->segments_[i].index_;
 		ctx->u.sidlist.segments_[i].srv6_sid_value_ = sid_list->segments_[i].srv6_sid_value_;
 	}
@@ -3827,12 +3827,11 @@ dplane_route_update_internal(struct route_node *rn,
 	if (ret == AOK) {
 		nexthop = re->nhe->nhg.nexthop;
 		flags = re->flags;
-		if (CHECK_FLAG(re->flags, ZEBRA_FLAG_LOCAL_SID_ROUTE)) {
+		if ((nexthop && CHECK_FLAG(nexthop->nh_flags, NEXTHOP_FLAG_SRV6_RVIP))
+			|| CHECK_FLAG(re->flags, ZEBRA_FLAG_LOCAL_SID_ROUTE)
+			|| (nexthop->srte_color && re->type == ZEBRA_ROUTE_STATIC)) {
 			SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
 		}
-		dplane_ctx_set_flags(ctx, flags);
-		nexthop = re->nhe->nhg.nexthop;
-		flags = re->flags;
 		if (nexthop && nexthop->nh_srv6) {
 			SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
 		}
@@ -3845,7 +3844,8 @@ dplane_route_update_internal(struct route_node *rn,
 			old_nexthop = old_re->nhe->nhg.nexthop;
 			old_flags = old_re->flags;
 			/* Assign ZEBRA_FLAG_KERNEL_BYPASS to dplane route info */
-			if (CHECK_FLAG(old_re->flags, ZEBRA_FLAG_LOCAL_SID_ROUTE)) {
+			if ((old_nexthop && CHECK_FLAG(old_nexthop->nh_flags, NEXTHOP_FLAG_SRV6_RVIP))
+				|| CHECK_FLAG(old_re->flags, ZEBRA_FLAG_LOCAL_SID_ROUTE)) {
 				SET_FLAG(old_flags, ZEBRA_FLAG_KERNEL_BYPASS);
 			}
 			dplane_ctx_set_old_flags(ctx, old_flags);
@@ -6361,6 +6361,10 @@ static void kernel_dplane_log_detail(struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_TC_FILTER_ADD:
 	case DPLANE_OP_TC_FILTER_DELETE:
 	case DPLANE_OP_TC_FILTER_UPDATE:
+		break;
+	case DPLANE_OP_SID_LIST_INSTALL:
+	case DPLANE_OP_SID_LIST_UPDATE:
+	case DPLANE_OP_SID_LIST_DELETE:
 		break;
 	}
 }

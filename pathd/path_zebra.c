@@ -215,10 +215,74 @@ void path_zebra_delete_sr_policy(struct srte_policy *policy)
 }
 
 /**
- * Adds a segment list to Zebra.
+ * Adds a segment routing policy to Zebra.
  *
- * @param policy The segment list to add
+ * @param policy The policy to add
+ * @param segment_list The segment list for the policy
  */
+void path_zebra_add_srv6_policy(struct srte_policy *policy,
+			      struct srte_candidate_group *candidate_group)
+{
+	struct zapi_sr_policy zp = {};
+	struct srte_candidate *candidate;
+	uint32_t count = 0;
+	struct srte_segment_entry *s_entry;
+	zp.color = policy->color;
+	zp.endpoint = policy->endpoint;
+	strlcpy(zp.name, policy->name, sizeof(zp.name));
+	zp.tunnel_type = SRTE_TUNNEL_TYPE_SRV6;
+	char endpoint[46];
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	RB_FOREACH (candidate, srte_candidate_pref_head, &candidate_group->candidate_paths) {
+		if (candidate->segment_list == NULL ) 
+		{
+			continue;
+		}
+		if (CHECK_FLAG(policy->flags, F_POLICY_CONF_BFD) 
+		    && candidate->status == SRTE_DETECT_DOWN)
+		{
+            continue;
+		}
+		if (candidate->bfd_name[0] && candidate->status == SRTE_DETECT_DOWN)
+		{
+			continue;
+		}
+		if (CHECK_FLAG(candidate->flags, F_CANDIDATE_DELETED))
+		{
+			continue;
+		}
+		if (count < candidate_group->up_cpath_num)
+		{
+			zlog_info("collect UP cpath, color:%u, endpoint:%s, group:%u, cpath:%s, sidlist:%s, bfd_name:%s",
+				zp.color, endpoint, candidate_group->preference, candidate->name, candidate->segment_list->name, candidate->bfd_name);
+			strlcpy(zp.srv6_tunnel.sidlists[count].sidlist_name, candidate->segment_list->name,
+				sizeof(zp.srv6_tunnel.sidlists[count].sidlist_name));
+			zp.srv6_tunnel.sidlists[count].weight = candidate->weight;
+			count++;
+		}
+	}
+    zp.srv6_tunnel.path_num = count;
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	zlog_info("notify policy set to zebra, color:%u, endpoint:%s, name:%s, tunnel_type:%u, path_num:%u.",
+		zp.color, endpoint, zp.name[0]?zp.name : "-",
+		zp.tunnel_type, zp.srv6_tunnel.path_num);
+	(void)zebra_send_sr_policy(zclient, ZEBRA_SRV6_POLICY_SET, &zp);
+}
+void path_zebra_delete_srv6_policy(struct srte_policy *policy)
+{
+	struct zapi_sr_policy zp = {};
+	zp.color = policy->color;
+	zp.endpoint = policy->endpoint;
+	strlcpy(zp.name, policy->name, sizeof(zp.name));
+	zp.tunnel_type = SRTE_TUNNEL_TYPE_SRV6;
+	zp.srv6_tunnel.path_num = 0;
+    char endpoint[60];
+	prefix2str(&policy->endpoint, endpoint, sizeof(endpoint));
+	zlog_info("notify policy del to zebra, color:%u, endpoint:%s, name:%s, tunnel_type:%u, path_num:%u.",
+		zp.color, endpoint, zp.name[0]?zp.name : "-",
+		zp.tunnel_type, zp.srv6_tunnel.path_num);
+	(void)zebra_send_sr_policy(zclient, ZEBRA_SRV6_POLICY_DELETE, &zp);
+}
 void path_zebra_add_srv6_sidlist(struct srte_segment_list *segment_list)
 {
 	if (segment_list == NULL) {

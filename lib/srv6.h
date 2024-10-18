@@ -78,6 +78,8 @@ struct seg6local_context {
 	uint8_t function_bits_length;
 	uint8_t argument_bits_length;
     char vrfName[VRF_NAMSIZ + 1];
+	char ifname[INTERFACE_NAMSIZ];
+
 };
 
 enum srv6_format {

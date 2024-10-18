@@ -29,10 +29,26 @@
 extern "C" {
 #endif
 
+struct rnh_node {
+	/*
+	 * CAUTION
+	 *
+	 * These fields must be the very first fields in this structure.
+	 *
+	 * @see bgp_node_to_rnode
+	 * @see bgp_node_from_rnode
+	 */
+	ROUTE_NODE_FIELDS
+
+	struct bgp_dest *pdest;
+
+	uint8_t flags;
+
+};
 extern void zebra_rnh_init(void);
 
-extern struct rnh *zebra_add_rnh(struct prefix *p, vrf_id_t vrfid, safi_t safi,
-				 bool *exists);
+extern struct rnh *zebra_add_rnh(struct prefix *p, vrf_id_t vrfid, safi_t safi, 
+			  bool *exists, uint32_t srte_color);
 extern struct rnh *zebra_lookup_rnh(struct prefix *p, vrf_id_t vrfid,
 				    safi_t safi);
 extern void zebra_free_rnh(struct rnh *rnh);
@@ -44,12 +60,14 @@ extern void zebra_register_rnh_pseudowire(vrf_id_t, struct zebra_pw *, bool *);
 extern void zebra_deregister_rnh_pseudowire(vrf_id_t, struct zebra_pw *);
 extern void zebra_remove_rnh_client(struct rnh *rnh, struct zserv *client);
 extern void zebra_evaluate_rnh(struct zebra_vrf *zvrf, afi_t afi, int force,
-			       const struct prefix *p, safi_t safi);
+			       struct prefix *p, safi_t safi);
 extern void zebra_print_rnh_table(vrf_id_t vrfid, afi_t afi, safi_t safi,
-				  struct vty *vty, const struct prefix *p,
+				  struct vty *vty, struct prefix *p,
 				  json_object *json);
 
 extern int rnh_resolve_via_default(struct zebra_vrf *zvrf, int family);
+extern void zebra_rnh_info_add(struct route_node *dest, struct rnh *pi);
+extern void zebra_rnh_info_del(struct route_node *dest, struct rnh *pi);
 
 extern bool rnh_nexthop_valid(const struct route_entry *re,
 			      const struct nexthop *nh);
@@ -57,7 +75,7 @@ extern bool rnh_nexthop_valid(const struct route_entry *re,
 /* UI control to avoid notifications if backup nexthop status changes */
 void rnh_set_hide_backups(bool hide_p);
 bool rnh_get_hide_backups(void);
-
+void zebra_evaluate_rnh_by_srte(afi_t afi, struct rnh *rnh);
 void show_nexthop_json_helper(json_object *json_nexthop,
 			      const struct nexthop *nexthop,
 			      const struct route_entry *re);

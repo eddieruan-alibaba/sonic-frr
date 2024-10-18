@@ -27,6 +27,7 @@
 #include "mpls.h"
 #include "vxlan.h"
 #include "srv6.h"
+#include "srte.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,8 @@ enum nexthop_types_t {
 	NEXTHOP_TYPE_IPV6,	 /* IPv6 nexthop.  */
 	NEXTHOP_TYPE_IPV6_IFINDEX, /* IPv6 nexthop with ifindex.  */
 	NEXTHOP_TYPE_BLACKHOLE,    /* Null0 nexthop.  */
+	NEXTHOP_TYPE_IPV4_SEGMENTLIST, /* Segment list */
+	NEXTHOP_TYPE_IPV6_SEGMENTLIST, /* Segment list */
 };
 
 enum blackhole_type {
@@ -96,6 +99,7 @@ struct nexthop {
 #define NEXTHOP_FLAG_SRTE       (1 << 7) /* SR-TE color used for BGP traffic */
 #define NEXTHOP_FLAG_EVPN       (1 << 8) /* nexthop is EVPN */
 #define NEXTHOP_FLAG_LINKDOWN   (1 << 9) /* is not removed on link down */
+#define NEXTHOP_FLAG_SRV6_TUNNEL  (1 << 10) /* Relay by SRV6 tunnel */
 
 #define NEXTHOP_IS_ACTIVE(flags)                                               \
 	(CHECK_FLAG(flags, NEXTHOP_FLAG_ACTIVE)                                \
@@ -103,6 +107,8 @@ struct nexthop {
 
 	uint8_t nh_flags;
 	#define NEXTHOP_FLAG_EVPN_RVTEP (1 << 0) /* EVPN remote vtep nexthop */
+	#define NEXTHOP_FLAG_SRV6_RVIP  (1 << 1) /* SRv6 remote overlay nexthop */
+	uint8_t alibgp_flags;
 
 	/* Nexthop address */
 	union {
@@ -148,6 +154,8 @@ struct nexthop {
 
 	/* SRv6 information */
 	struct nexthop_srv6 *nh_srv6;
+	struct in6_addr seg6_src;
+	char sidlist_name[SRTE_SEGMENTLIST_NAME_MAX_LENGTH];
 };
 
 /* Utility to append one nexthop to another. */
@@ -191,6 +199,10 @@ struct nexthop *nexthop_from_ipv6_ifindex(const struct in6_addr *ipv6,
 struct nexthop *nexthop_from_blackhole(enum blackhole_type bh_type,
 				       vrf_id_t nh_vrf_id);
 
+struct nexthop *nexthop_from_ipv4_segment_list(const struct in_addr *ipv4,
+	vrf_id_t vrf_id);
+struct nexthop *nexthop_from_ipv6_segment_list(const struct in6_addr *ipv6,
+	vrf_id_t vrf_id);
 /*
  * Hash a nexthop. Suitable for use with hash tables.
  *
@@ -254,6 +266,7 @@ extern struct nexthop *nexthop_dup(const struct nexthop *nexthop,
 /* Duplicates a nexthop and returns the newly allocated nexthop */
 extern struct nexthop *nexthop_dup_no_recurse(const struct nexthop *nexthop,
 					      struct nexthop *rparent);
+extern struct nexthop *nexthop_dup_no_context(const struct nexthop *nexthop, struct nexthop *rparent);
 
 /*
  * Parse one or more backup index values, as comma-separated numbers,

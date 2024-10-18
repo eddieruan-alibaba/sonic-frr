@@ -25,6 +25,7 @@
 
 #include "zebra/zebra_mpls.h"
 #include "zebra/zebra_dplane.h"
+#include <linux/seg6.h>	
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,6 +62,12 @@ extern "C" {
 #define RTPROT_OPENFABRIC  197
 #define RTPROT_SRTE        198
 
+struct seg6_iptunnel_encap_pri {
+	int mode;
+	char segment_name[64];
+	struct in6_addr src;
+	struct ipv6_sr_hdr srh[0];
+};
 void rt_netlink_init(void);
 
 /* MPLS label forwarding table change, using dataplane context information. */

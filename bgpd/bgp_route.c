@@ -537,6 +537,21 @@ void bgp_path_info_path_with_addpath_rx_str(struct bgp_path_info *pi, char *buf,
 		snprintf(buf, buf_len, "path %s", pi->peer->host);
 }
 
+static int bgp_path_info_srv6_cmp_compatible(struct bgp_path_info *exist,
+					struct bgp_path_info *new, int debug)
+{
+	bool new_te = false;
+	bool exist_te = false;
+	if (new->te_nexthop && CHECK_FLAG(new->te_nexthop->flags, BGP_NEXTHOP_SRV6TE_VALID))
+		new_te = true;;
+	if (exist->te_nexthop && CHECK_FLAG(exist->te_nexthop->flags, BGP_NEXTHOP_SRV6TE_VALID))
+		exist_te = true;
+	if (new_te == true && exist_te == false)
+		return 1;
+	if (new_te == false && exist_te == true)
+		return 0;
+	return -1;
+}
 
 /*
  * Get the ultimate path info.
@@ -554,6 +569,14 @@ struct bgp_path_info *bgp_get_imported_bpi_ultimate(struct bgp_path_info *info)
 		;
 
 	return bpi_ultimate;
+}
+static bool bgp_attr_is_srv6(struct attr *attr)
+{
+	if (attr->srv6_l3vpn)
+		return true;
+	if (attr->srv6_vpn)
+		return true;
+	return false;
 }
 
 /* Compare two bgp route entity.  If 'new' is preferable over 'exist' return 1.
@@ -596,6 +619,7 @@ static int bgp_path_info_cmp(struct bgp *bgp, struct bgp_path_info *new,
 	bool new_proxy;
 	bool new_origin, exist_origin;
 	struct bgp_path_info *bpi_ultimate;
+	bool cannot_multipath = false;
 
 	*paths_eq = 0;
 
@@ -632,6 +656,11 @@ static int bgp_path_info_cmp(struct bgp *bgp, struct bgp_path_info *new,
 
 	newattr = new->attr;
 	existattr = exist->attr;
+	ret = bgp_path_info_srv6_cmp_compatible(exist, new, debug);
+	if (ret >= 0)
+		return ret;
+	if (bgp_attr_is_srv6(existattr) != bgp_attr_is_srv6(newattr))
+		cannot_multipath = true;
 
 	/* A BGP speaker that has advertised the "Long-lived Graceful Restart
 	 * Capability" to a neighbor MUST perform the following upon receiving
@@ -1228,6 +1257,11 @@ static int bgp_path_info_cmp(struct bgp *bgp, struct bgp_path_info *new,
 			if (debug)
 				zlog_debug(
 					"%s: %s and %s cannot be multipath, one has a label while the other does not",
+					pfx_buf, new_buf, exist_buf);
+		} else if(cannot_multipath){
+			if (debug)
+				zlog_debug(
+					"%s: %s and %s cannot be multipath, one has is srv6 while the other does not",
 					pfx_buf, new_buf, exist_buf);
 		} else if (CHECK_FLAG(bgp->flags,
 				      BGP_FLAG_ASPATH_MULTIPATH_RELAX)) {
@@ -8666,11 +8700,13 @@ void bgp_redistribute_add(struct bgp *bgp, struct prefix *p,
 		break;
 	case NEXTHOP_TYPE_IPV4:
 	case NEXTHOP_TYPE_IPV4_IFINDEX:
+	case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 		attr.nexthop = nexthop->ipv4;
 		attr.mp_nexthop_len = BGP_ATTR_NHLEN_IPV4;
 		break;
 	case NEXTHOP_TYPE_IPV6:
 	case NEXTHOP_TYPE_IPV6_IFINDEX:
+	case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 		attr.mp_nexthop_global = nexthop->ipv6;
 		attr.mp_nexthop_len = BGP_ATTR_NHLEN_IPV6_GLOBAL;
 		break;
@@ -10632,6 +10668,70 @@ void route_vty_out_detail(struct vty *vty, struct bgp *bgp, struct bgp_dest *bn,
 	if (!json_paths)
 		vty_out(vty, "\n");
 
+	if (path->nexthop)
+	{
+		struct nexthop *nexthop;
+		struct bgp_nexthop_cache *bnc = path->nexthop;
+		if (!json_paths)
+		{
+			vty_out(vty, "      Relay-Nexthop(ip):");
+			for (nexthop = bnc->nexthop; nexthop; nexthop = nexthop->next) {
+				switch (nexthop->type) {
+				case NEXTHOP_TYPE_IPV6:
+				case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
+					vty_out(vty, " gate %s, ",
+						inet_ntop(AF_INET6, &nexthop->gate.ipv6, buf,
+							  sizeof(buf)));
+					break;
+				case NEXTHOP_TYPE_IPV6_IFINDEX:
+					vty_out(vty, " gate %s, if %s, ",
+						inet_ntop(AF_INET6, &nexthop->gate.ipv6, buf,
+							  sizeof(buf)),
+						ifindex2ifname(bnc->ifindex ? bnc->ifindex
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_IPV4:
+				case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+					vty_out(vty, " gate %s, ",
+						inet_ntop(AF_INET, &nexthop->gate.ipv4, buf,
+							  sizeof(buf)));
+					break;
+				case NEXTHOP_TYPE_IFINDEX:
+					vty_out(vty, " if %s, ",
+						ifindex2ifname(bnc->ifindex ? bnc->ifindex
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_IPV4_IFINDEX:
+					vty_out(vty, " gate %s, if %s, ",
+						inet_ntop(AF_INET, &nexthop->gate.ipv4, buf,
+							  sizeof(buf)),
+						ifindex2ifname(bnc->ifindex ? bnc->ifindex
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_BLACKHOLE:
+					vty_out(vty, " blackhole, ");
+					break;
+				default:
+					vty_out(vty, " invalid nexthop type %u\n",
+						nexthop->type);
+				}
+			}
+			vty_out(vty, "\n");
+			if (path->te_nexthop)
+			{
+				bnc = path->te_nexthop;
+				vty_out(vty, "      Relay-Nexthop(tunnel):");
+				if (CHECK_FLAG(bnc->flags, BGP_NEXTHOP_SRV6TE_VALID))
+					vty_out(vty, " srv6-tunnel:%s|%u(endpoint|color), ", 
+							inet_ntop(bnc->resolve_prefix.family, &bnc->resolve_prefix.u.prefix, buf, sizeof(buf)),
+							bnc->srte_color);
+				vty_out(vty, "\n");
+			}
+		}
+	}
 	/* display the link-local nexthop */
 	if (attr->mp_nexthop_len == BGP_ATTR_NHLEN_IPV6_GLOBAL_AND_LL) {
 		if (json_paths) {

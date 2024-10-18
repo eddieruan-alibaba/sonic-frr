@@ -60,6 +60,7 @@ enum srte_candidate_type {
 	SRTE_CANDIDATE_TYPE_UNDEFINED = 0,
 	SRTE_CANDIDATE_TYPE_EXPLICIT = 1,
 	SRTE_CANDIDATE_TYPE_DYNAMIC = 2,
+	SRTE_CANDIDATE_TYPE_EXPLICIT_SRV6 = 3,
 };
 
 enum srte_candidate_metric_type {
@@ -421,6 +422,7 @@ struct srte_policy {
 #define F_POLICY_DELETED 0x0008
 #define F_POLICY_CONF_BFD 0x0010
 #define F_POLICY_TUNNEL_ATTR_UPDATE 0x0020
+#define F_POLICY_SRV6TE 0x0040
     struct sbfd_session_config *bfd_config;
 	/* SRP id for PcInitiated support */
 	int srp_id;
@@ -555,6 +557,8 @@ int32_t srte_ted_do_query_type_e(struct srte_segment_entry *entry,
  */
 int32_t srte_ted_do_query_type_f(struct srte_segment_entry *entry,
 				 struct ipaddr *local, struct ipaddr *remote);
+void srv6_refresh_policy_state(struct srte_policy *policy);
+void srv6_choose_best_cpath_group(struct srte_policy *policy);
 
 void refcounter_init(struct srte_segment_list *segment_list);
 void refcounter_increase(struct srte_segment_list *segment_list);

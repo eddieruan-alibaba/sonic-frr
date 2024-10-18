@@ -425,6 +425,7 @@ extern void prefix_free_lists(void *arg);
 extern const char *prefix_family_str(union prefixconstptr pu);
 extern int prefix_blen(union prefixconstptr pu);
 extern int str2prefix(const char *, struct prefix *);
+extern void addr2prefix(struct ipaddr *ipaddr, struct prefix *prefix);
 
 #define PREFIX2STR_BUFFER  PREFIX_STRLEN
 

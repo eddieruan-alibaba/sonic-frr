@@ -483,8 +483,9 @@ int pathd_srte_policy_candidate_path_create(struct nb_cb_create_args *args)
 {
 	struct srte_policy *policy;
 	struct srte_candidate *candidate;
-	uint32_t preference, weight;
+	uint32_t preference;
 	const char *name;
+	enum srte_candidate_type type = SRTE_CANDIDATE_TYPE_UNDEFINED;
 
 	if (args->event != NB_EV_APPLY)
 		return NB_OK;
@@ -492,10 +493,12 @@ int pathd_srte_policy_candidate_path_create(struct nb_cb_create_args *args)
 	policy = nb_running_get_entry(args->dnode, NULL, true);
 	preference = yang_dnode_get_uint32(args->dnode, "./preference");
 	name = yang_dnode_get_string(args->dnode, "./name");
-
+	type = yang_dnode_get_enum(args->dnode, "./type");
 	candidate = srte_candidate_add(policy, preference, SRTE_ORIGIN_LOCAL, NULL, name);
-	weight = yang_dnode_get_uint32(args->dnode, "./weight");
-	candidate->weight = weight;
+	candidate->type = type;
+	if (candidate->type == SRTE_CANDIDATE_TYPE_EXPLICIT_SRV6)
+		SET_FLAG(policy->flags, F_POLICY_SRV6TE);
+
 	nb_running_set_entry(args->dnode, candidate);
 	SET_FLAG(candidate->flags, F_CANDIDATE_NEW);
 

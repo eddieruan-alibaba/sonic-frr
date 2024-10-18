@@ -33,9 +33,11 @@
 #include "zebra/zebra_tc.h"
 #include "debug.h"
 #include "zebra_script.h"
+#include "zebra_srte.h"
 
 DEFINE_MTYPE_STATIC(ZEBRA, RIB_TABLE_INFO, "RIB table info");
 DEFINE_MTYPE_STATIC(ZEBRA, ZEBRA_RT_TABLE, "Zebra VRF table");
+DEFINE_MTYPE_STATIC(ZEBRA, ZEBRA_NHG_UPDATE_ENTRY, "Nhg update entry");
 
 struct zebra_router zrouter = {
 	.multipath_num = MULTIPATH_NUM,
@@ -230,6 +232,25 @@ enum multicast_mode multicast_mode_ipv4_get(void)
 	return zrouter.ipv4_multicast_mode;
 }
 
+void nhg_update_entry_list_free(void)
+{
+	struct nhg_update_entry *nhg_entry = NULL;
+	frr_each_safe(nhg_update_entry_list, &zrouter.nhg_update_list, nhg_entry) {
+		nhg_update_entry_list_del(&zrouter.nhg_update_list, nhg_entry);
+		nhg_entry->nhe = NULL;
+		nhg_update_entry_free(nhg_entry);
+	}
+}
+void nhg_update_entry_free(struct nhg_update_entry *nhg_entry)
+{
+	XFREE(MTYPE_ZEBRA_NHG_UPDATE_ENTRY, nhg_entry);
+}
+struct nhg_update_entry *nhg_update_entry_create(void)
+{
+	struct nhg_update_entry *nhg_entry = NULL;
+	nhg_entry = XCALLOC(MTYPE_ZEBRA_NHG_UPDATE_ENTRY, sizeof(*nhg_entry));
+	return nhg_entry;
+}
 void zebra_router_terminate(void)
 {
 	struct zebra_router_table *zrt, *tmp;
@@ -262,6 +283,7 @@ void zebra_router_terminate(void)
 	hash_free(zrouter.ipset_entry_hash);
 	hash_clean(zrouter.iptable_hash, zebra_pbr_iptable_free);
 	hash_free(zrouter.iptable_hash);
+	nhg_update_entry_list_free();
 
 #ifdef HAVE_SCRIPTING
 	zebra_script_destroy();
@@ -330,6 +352,7 @@ void zebra_router_init(bool asic_offload, bool notify_on_ack)
 	zrouter.asic_offloaded = asic_offload;
 	zrouter.notify_on_ack = notify_on_ack;
 
+	nhg_update_entry_list_init(&zrouter.nhg_update_list);
 	/*
 	 * If you start using asic_notification_nexthop_control
 	 * come talk to the FRR community about what you are doing

@@ -97,6 +97,23 @@ static int bgp_isvalid_nexthop_for_ebgp(struct bgp_nexthop_cache *bnc,
 	return false;
 }
 
+static int bgp_isvalid_labeled_nexthop(struct bgp_nexthop_cache *bnc)
+{
+	/*
+	 * In the case of MPLS-VPN, the label is learned from LDP or other
+	 * protocols, and nexthop tracking is enabled for the label.
+	 * The value is recorded as BGP_NEXTHOP_LABELED_VALID.
+	 * In the case of SRv6-VPN, we need to track the reachability to the
+	 * SID (in other words, IPv6 address). As in MPLS, we need to record
+	 * the value as BGP_NEXTHOP_SID_VALID. However, this function is
+	 * currently not implemented, and this function assumes that all
+	 * Transit routes for SRv6-VPN are valid.
+	 */
+	return (bgp_zebra_num_connects() == 0
+		|| (bnc && bnc->nexthop_num > 0
+		    && (CHECK_FLAG(bnc->flags, BGP_NEXTHOP_LABELED_VALID)
+			|| bnc->bgp->srv6_enabled)));
+}
 static int bgp_isvalid_nexthop_for_mplsovergre(struct bgp_nexthop_cache *bnc,
 					       struct bgp_path_info *path)
 {
@@ -160,6 +177,14 @@ static void bgp_unlink_nexthop_check(struct bgp_nexthop_cache *bnc)
 	}
 }
 
+void bgp_unlink_te_nexthop(struct bgp_path_info *path)
+{
+	struct bgp_nexthop_cache *bnc = path->te_nexthop;
+	if (!bnc)
+		return;
+	path_tenh_map(path, NULL, false);
+	bgp_unlink_nexthop_check(bnc);
+}
 void bgp_unlink_nexthop(struct bgp_path_info *path)
 {
 	struct bgp_nexthop_cache *bnc = path->nexthop;
@@ -294,6 +319,7 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 {
 	struct bgp_nexthop_cache_head *tree = NULL;
 	struct bgp_nexthop_cache *bnc;
+	struct bgp_nexthop_cache *te_bnc = NULL;
 	struct bgp_path_info *bpi_ultimate;
 	struct prefix p;
 	uint32_t srte_color = 0;
@@ -327,6 +353,8 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 		if (make_prefix(afi, pi, &p) < 0)
 			return 1;
 
+		ecommunity_color_present(
+			pi->attr->ecommunity, &srte_color);
 		if (!is_bgp_static_route && orig_prefix
 		    && prefix_same(&p, orig_prefix)) {
 			if (BGP_DEBUG(nht, NHT)) {
@@ -337,7 +365,7 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 			return 0;
 		}
 
-		srte_color = pi->attr->srte_color;
+		// srte_color = pi->attr->srte_color;
 	} else if (peer) {
 		/*
 		 * Gather the ifindex for if up/down events to be
@@ -372,9 +400,9 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 	else
 		tree = &bgp_nexthop->nexthop_cache_table[afi];
 
-	bnc = bnc_find(tree, &p, srte_color, ifindex);
+	bnc = bnc_find(tree, &p, 0, ifindex);
 	if (!bnc) {
-		bnc = bnc_new(tree, &p, srte_color, ifindex);
+		bnc = bnc_new(tree, &p, 0, ifindex);
 		bnc->bgp = bgp_nexthop;
 		if (BGP_DEBUG(nht, NHT))
 			zlog_debug("Allocated bnc %pFX(%d)(%u)(%s) peer %p",
@@ -388,7 +416,33 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 				bnc->bgp->name_pretty, bnc->flags, bnc->ifindex,
 				bnc->path_count, bnc->nht_info);
 	}
+#if 1
+	if (srte_color != 0)
+	{
+		te_bnc = bnc_find(tree, &p, srte_color, 0);
+		if (!te_bnc) {
+			te_bnc = bnc_new(tree, &p, srte_color, 0);
+			te_bnc->bgp = bgp_nexthop;
+			if (BGP_DEBUG(nht, NHT)) {
+				char buf[PREFIX2STR_BUFFER];
 
+				zlog_debug("Allocated bnc %s(%u)(%s) peer %p",
+						bnc_str(te_bnc, buf, PREFIX2STR_BUFFER),
+						te_bnc->srte_color, te_bnc->bgp->name_pretty,
+						peer);
+			}
+		} else {
+			if (BGP_DEBUG(nht, NHT)) {
+				char buf[PREFIX2STR_BUFFER];
+				zlog_debug(
+					"Found existing bnc %s(%s) flags 0x%x ifindex %d #paths %d peer %p, color %d",
+					bnc_str(te_bnc, buf, PREFIX2STR_BUFFER),
+					te_bnc->bgp->name_pretty, te_bnc->flags, te_bnc->ifindex,
+					te_bnc->path_count, te_bnc->nht_info, te_bnc->srte_color);
+			}
+		}
+	}
+#endif
 	if (pi && is_route_parent_evpn(pi))
 		bnc->is_evpn_gwip_nexthop = true;
 
@@ -445,6 +499,11 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 		   && !is_default_host_route(&bnc->prefix))
 		register_zebra_rnh(bnc);
 
+#if 1
+    if (te_bnc && !CHECK_FLAG(te_bnc->flags, BGP_NEXTHOP_REGISTERED)) {
+        register_zebra_rnh(te_bnc);
+    }
+#endif
 	if (pi && pi->nexthop != bnc) {
 		/* Unlink from existing nexthop cache, if any. This will also
 		 * free
@@ -471,7 +530,14 @@ int bgp_find_or_add_nexthop(struct bgp *bgp_route, struct bgp *bgp_nexthop,
 		if (CHECK_FLAG(peer->flags, PEER_FLAG_CONFIG_NODE))
 			bnc->nht_info = (void *)peer; /* NHT peer reference */
 	}
+#if 1
 
+    if (pi && pi->te_nexthop != te_bnc) {
+        bgp_unlink_te_nexthop(pi);
+        if (te_bnc)
+		    path_tenh_map(pi, te_bnc, true);
+    }  
+#endif
 	/*
 	 * We are cheating here.  Views have no associated underlying
 	 * ability to detect nexthops.  So when we have a view
@@ -600,6 +666,11 @@ static void bgp_process_nexthop_update(struct bgp_nexthop_cache *bnc,
 
 		if (!bnc->is_evpn_gwip_nexthop)
 			bnc->flags |= BGP_NEXTHOP_VALID;
+        if (nhr->type == ZEBRA_ROUTE_SRTE)
+            SET_FLAG(bnc->flags, BGP_NEXTHOP_SRV6TE_VALID);
+        else
+            UNSET_FLAG(bnc->flags, BGP_NEXTHOP_SRV6TE_VALID);
+		bnc->resolve_prefix = nhr->prefix;
 		bnc->metric = nhr->metric;
 		bnc->nexthop_num = nhr->nexthop_num;
 
@@ -702,6 +773,7 @@ static void bgp_process_nexthop_update(struct bgp_nexthop_cache *bnc,
 		bnc->flags &= ~BGP_NEXTHOP_EVPN_INCOMPLETE;
 		bnc->flags &= ~BGP_NEXTHOP_VALID;
 		bnc->flags &= ~BGP_NEXTHOP_LABELED_VALID;
+		UNSET_FLAG(bnc->flags, BGP_NEXTHOP_SRV6TE_VALID);
 		bnc->nexthop_num = nhr->nexthop_num;
 
 		/* notify bgp fsm if nbr ip goes from valid->invalid */
@@ -880,7 +952,7 @@ void bgp_parse_nexthop_update(int command, vrf_id_t vrf_id)
 				&nhr.prefix, nhr.srte_color, bgp->name_pretty);
 	} else
 		bgp_process_nexthop_update(bnc_import, &nhr, true);
-
+#if 0
 	/*
 	 * HACK: if any BGP route is dependant on an SR-policy that doesn't
 	 * exist, zebra will never send NH updates relative to that policy. In
@@ -905,6 +977,7 @@ void bgp_parse_nexthop_update(int command, vrf_id_t vrf_id)
 			bgp_process_nexthop_update(bnc_iter, &nhr, false);
 		}
 	}
+#endif
 }
 
 /*
@@ -1060,9 +1133,12 @@ static void sendmsg_zebra_rnh(struct bgp_nexthop_cache *bnc, int command)
 			   zserv_command_string(command), &bnc->prefix,
 			   bnc->bgp->name_pretty);
 
-	ret = zclient_send_rnh(zclient, command, &bnc->prefix, SAFI_UNICAST,
-			       exact_match, resolve_via_default,
-			       bnc->bgp->vrf_id);
+	if (bnc->srte_color)
+		ret = zclient_send_rnh(zclient, command, &bnc->prefix, SAFI_UNICAST,
+							exact_match, false, bnc->bgp->vrf_id, NEXTHOP_REGISTER_TYPE_COLOR, &bnc->srte_color);
+	else
+		ret = zclient_send_rnh(zclient, command, &bnc->prefix, SAFI_UNICAST,
+			    		exact_match, false, bnc->bgp->vrf_id, NEXTHOP_REGISTER_TYPE_DEFAULT, NULL);
 	if (ret == ZCLIENT_SEND_FAILURE) {
 		flog_warn(EC_BGP_ZEBRA_SEND,
 			  "sendmsg_nexthop: zclient_send_message() failed");
@@ -1119,6 +1195,170 @@ static void unregister_zebra_rnh(struct bgp_nexthop_cache *bnc)
 	sendmsg_zebra_rnh(bnc, ZEBRA_NEXTHOP_UNREGISTER);
 }
 
+void bgp_process_nexthop_change(struct bgp_nexthop_cache *bnc, struct bgp_path_info *path, bool isSrv6TeBnc){
+	struct bgp_path_info *bpi_ultimate;
+	struct bgp_dest *dest;
+	int afi;
+	struct bgp_table *table;
+	safi_t safi;
+	struct bgp *bgp_path;
+	const struct prefix *p;
+	bool isServiceRoute = false;
+
+	dest = path->net;
+	assert(dest && bgp_dest_table(dest));
+	p = bgp_dest_get_prefix(dest);
+	afi = family2afi(p->family);
+	table = bgp_dest_table(dest);
+	safi = table->safi;
+
+	/*
+	 * handle routes from other VRFs (they can have a
+	 * nexthop in THIS VRF). bgp_path is the bgp instance
+	 * that owns the route referencing this nexthop.
+	 */
+	bgp_path = table->bgp;
+
+	/*
+	 * Path becomes valid/invalid depending on whether the nexthop
+	 * reachable/unreachable.
+	 *
+	 * In case of unicast routes that were imported from vpn
+	 * and that have labels, they are valid only if there are
+	 * nexthops with labels
+	 *
+	 * If the nexthop is EVPN gateway-IP,
+	 * do not check for a valid label.
+	 */
+
+	bool bnc_is_valid_nexthop = false;
+	bool path_valid = false;
+	if (path && (path->attr->srv6_l3vpn || path->attr->srv6_vpn))
+        isServiceRoute = true;
+    else
+        isServiceRoute = false;
+
+	if (safi == SAFI_UNICAST && path->sub_type == BGP_ROUTE_IMPORTED
+	    && path->extra && path->extra->num_labels
+	    && (path->attr->evpn_overlay.type != OVERLAY_INDEX_GATEWAY_IP)) {
+			if (isServiceRoute)
+				bnc_is_valid_nexthop =
+					bgp_isvalid_nexthop(bnc) ? true : false;
+			else
+				bnc_is_valid_nexthop =
+					bgp_isvalid_labeled_nexthop(bnc) ? true : false;
+	} else if (safi == SAFI_MPLS_VPN &&
+			path->sub_type != BGP_ROUTE_IMPORTED) {
+		/* avoid not redistributing mpls vpn routes */
+		bnc_is_valid_nexthop =
+			bgp_isvalid_nexthop(bnc) ? true : false;
+	} else {
+		if (bgp_update_martian_nexthop(
+			    bnc->bgp, afi, safi, path->type,
+			    path->sub_type, path->attr, dest)) {
+			if (BGP_DEBUG(nht, NHT))
+				zlog_debug(
+					"%s: prefix %pBD (vrf %s), ignoring path due to martian or self-next-hop",
+					__func__, dest, bgp_path->name);
+		} else
+			bnc_is_valid_nexthop =
+				bgp_isvalid_nexthop(bnc) ? true : false;
+	}
+
+	if (BGP_DEBUG(nht, NHT)) {
+		if (dest->pdest)
+			zlog_debug(
+				"... eval path %d/%d %pBD RD %pRD %s flags 0x%x",
+				afi, safi, dest,
+				(struct prefix_rd *)bgp_dest_get_prefix(
+					dest->pdest),
+				bgp_path->name_pretty, path->flags);
+		else
+			zlog_debug(
+				"... eval path %d/%d %pBD %s flags 0x%x",
+				afi, safi, dest, bgp_path->name_pretty,
+				path->flags);
+	}
+
+	/* Skip paths marked for removal or as history. */
+	if (CHECK_FLAG(path->flags, BGP_PATH_REMOVED)
+	    || CHECK_FLAG(path->flags, BGP_PATH_HISTORY))
+		return;
+
+	/* Copy the metric to the path. Will be used for bestpath
+	 * computation */
+	bpi_ultimate = bgp_get_imported_bpi_ultimate(path);
+	if (bgp_isvalid_nexthop(bnc) && bnc->metric)
+		(bgp_path_info_extra_get(bpi_ultimate))->igpmetric =
+			bnc->metric;
+	else if (bpi_ultimate->extra)
+		bpi_ultimate->extra->igpmetric = 0;
+
+	if (CHECK_FLAG(bnc->change_flags, BGP_NEXTHOP_METRIC_CHANGED)
+		|| isSrv6TeBnc)
+		SET_FLAG(path->flags, BGP_PATH_IGP_CHANGED);
+	if (CHECK_FLAG(bnc->change_flags, BGP_NEXTHOP_CHANGED) 
+		&& !isServiceRoute)
+		SET_FLAG(path->flags, BGP_PATH_IGP_CHANGED);
+
+	path_valid = CHECK_FLAG(path->flags, BGP_PATH_VALID);
+	if (path_valid != bnc_is_valid_nexthop) {
+		if (path_valid) {
+			if (!isSrv6TeBnc){
+				/* No longer valid, clear flag; also for EVPN
+				 * routes, unimport from VRFs if needed.
+				 */
+				bgp_aggregate_decrement(bgp_path, p, path, afi,
+							safi);
+				bgp_path_info_unset_flag(dest, path,
+							 BGP_PATH_VALID);
+				if (safi == SAFI_EVPN &&
+				    bgp_evpn_is_prefix_nht_supported(bgp_dest_get_prefix(dest)))
+					bgp_evpn_unimport_route(bgp_path,
+						afi, safi, bgp_dest_get_prefix(dest), path);
+			}
+		} else {
+			/* Path becomes valid, set flag; also for EVPN
+			 * routes, import from VRFs if needed.
+			 */
+			bgp_path_info_set_flag(dest, path,
+					       BGP_PATH_VALID);
+			bgp_aggregate_increment(bgp_path, p, path, afi,
+						safi);
+			if (safi == SAFI_EVPN &&
+			    bgp_evpn_is_prefix_nht_supported(bgp_dest_get_prefix(dest)))
+				bgp_evpn_import_route(bgp_path,
+					afi, safi, bgp_dest_get_prefix(dest), path);
+		}
+	}
+	else if (CHECK_FLAG(path->flags, BGP_PATH_IGP_CHANGED) && bnc_is_valid_nexthop)
+	{
+		if (safi == SAFI_EVPN &&
+			bgp_evpn_is_prefix_nht_supported(bgp_dest_get_prefix(dest)))
+			bgp_evpn_import_route(bgp_path,
+				afi, safi, bgp_dest_get_prefix(dest), path);
+
+		if (BGP_DEBUG(nht, NHT)) 
+		{
+			char buf1[RD_ADDRSTRLEN];
+			if (dest->pdest) {
+				prefix_rd2str((struct prefix_rd *)bgp_dest_get_prefix(dest->pdest),
+					buf1, sizeof(buf1));
+				zlog_debug(
+					"... igp chenge eval path %d/%d %pBD RD %s %s flags 0x%x",
+					afi, safi, dest, buf1,
+					bgp_path->name_pretty, path->flags);
+			} else
+				zlog_debug(
+					"... igp chenge eval path %d/%d %pBD %s flags 0x%x",
+					afi, safi, dest, bgp_path->name_pretty,
+					path->flags);
+		}
+	}
+
+	bgp_process(bgp_path, dest, afi, safi);
+}
+
 /**
  * evaluate_paths - Evaluate the paths/nets associated with a nexthop.
  * ARGUMENTS:
@@ -1128,16 +1368,9 @@ static void unregister_zebra_rnh(struct bgp_nexthop_cache *bnc)
  */
 void evaluate_paths(struct bgp_nexthop_cache *bnc)
 {
-	struct bgp_dest *dest;
 	struct bgp_path_info *path;
-	struct bgp_path_info *bpi_ultimate;
-	int afi;
 	struct peer *peer = (struct peer *)bnc->nht_info;
-	struct bgp_table *table;
-	safi_t safi;
-	struct bgp *bgp_path;
-	const struct prefix *p;
-	bool isServiceRoute = false;
+	bool isSrv6TeBnc = false;
 
 	if (BGP_DEBUG(nht, NHT)) {
 		char bnc_buf[BNC_FLAG_DUMP_SIZE];
@@ -1152,131 +1385,27 @@ void evaluate_paths(struct bgp_nexthop_cache *bnc)
 			bgp_nexthop_dump_bnc_change_flags(bnc, chg_buf,
 							  sizeof(bnc_buf)));
 	}
-
-	LIST_FOREACH (path, &(bnc->paths), nh_thread) {
-		if (!(path->type == ZEBRA_ROUTE_BGP
-		      && ((path->sub_type == BGP_ROUTE_NORMAL)
-			  || (path->sub_type == BGP_ROUTE_STATIC)
-			  || (path->sub_type == BGP_ROUTE_IMPORTED))))
-			continue;
-
-		dest = path->net;
-		assert(dest && bgp_dest_table(dest));
-		p = bgp_dest_get_prefix(dest);
-		afi = family2afi(p->family);
-		table = bgp_dest_table(dest);
-		safi = table->safi;
-
-		/*
-		 * handle routes from other VRFs (they can have a
-		 * nexthop in THIS VRF). bgp_path is the bgp instance
-		 * that owns the route referencing this nexthop.
-		 */
-		bgp_path = table->bgp;
-
-		/*
-		 * Path becomes valid/invalid depending on whether the nexthop
-		 * reachable/unreachable.
-		 *
-		 * In case of unicast routes that were imported from vpn
-		 * and that have labels, they are valid only if there are
-		 * nexthops with labels
-		 *
-		 * If the nexthop is EVPN gateway-IP,
-		 * do not check for a valid label.
-		 */
-
-		bool bnc_is_valid_nexthop = false;
-		bool path_valid = false;
-		if (path && (path->attr->srv6_l3vpn || path->attr->srv6_vpn))
-            isServiceRoute = true;
-        else
-            isServiceRoute = false;
-
-		if (safi == SAFI_UNICAST && path->sub_type == BGP_ROUTE_IMPORTED
-		    && path->extra && path->extra->num_labels
-		    && (path->attr->evpn_overlay.type != OVERLAY_INDEX_GATEWAY_IP 
-			&& !isServiceRoute)) {
-			bnc_is_valid_nexthop =
-				bgp_isvalid_nexthop_for_mpls(bnc, path) ? true
-									: false;
-		} else {
-			if (bgp_update_martian_nexthop(
-				    bnc->bgp, afi, safi, path->type,
-				    path->sub_type, path->attr, dest)) {
-				if (BGP_DEBUG(nht, NHT))
-					zlog_debug(
-						"%s: prefix %pBD (vrf %s), ignoring path due to martian or self-next-hop",
-						__func__, dest, bgp_path->name);
-			} else
-				bnc_is_valid_nexthop =
-					bgp_isvalid_nexthop(bnc) ? true : false;
+	if (bnc->srte_color != 0)
+        isSrv6TeBnc = true;
+	
+	if (bnc->srte_color == 0) {
+		LIST_FOREACH (path, &(bnc->paths), nh_thread) {
+			if (!(path->type == ZEBRA_ROUTE_BGP
+			      && ((path->sub_type == BGP_ROUTE_NORMAL)
+				  || (path->sub_type == BGP_ROUTE_STATIC)
+				  || (path->sub_type == BGP_ROUTE_IMPORTED))))
+				continue;
+			bgp_process_nexthop_change(bnc, path, isSrv6TeBnc);
 		}
-
-		if (BGP_DEBUG(nht, NHT)) {
-			if (dest->pdest)
-				zlog_debug(
-					"... eval path %d/%d %pBD RD %pRD %s flags 0x%x",
-					afi, safi, dest,
-					(struct prefix_rd *)bgp_dest_get_prefix(
-						dest->pdest),
-					bgp_path->name_pretty, path->flags);
-			else
-				zlog_debug(
-					"... eval path %d/%d %pBD %s flags 0x%x",
-					afi, safi, dest, bgp_path->name_pretty,
-					path->flags);
+	} else {
+		LIST_FOREACH (path, &(bnc->paths), te_nh_thread) {
+			if (!(path->type == ZEBRA_ROUTE_BGP
+				&& ((path->sub_type == BGP_ROUTE_NORMAL)
+				|| (path->sub_type == BGP_ROUTE_STATIC)
+				|| (path->sub_type == BGP_ROUTE_IMPORTED))))
+				continue;
+			bgp_process_nexthop_change(bnc, path, isSrv6TeBnc);
 		}
-
-		/* Skip paths marked for removal or as history. */
-		if (CHECK_FLAG(path->flags, BGP_PATH_REMOVED)
-		    || CHECK_FLAG(path->flags, BGP_PATH_HISTORY))
-			continue;
-
-		/* Copy the metric to the path. Will be used for bestpath
-		 * computation */
-		bpi_ultimate = bgp_get_imported_bpi_ultimate(path);
-		if (bgp_isvalid_nexthop(bnc) && bnc->metric)
-			(bgp_path_info_extra_get(bpi_ultimate))->igpmetric =
-				bnc->metric;
-		else if (bpi_ultimate->extra)
-			bpi_ultimate->extra->igpmetric = 0;
-
-		if (CHECK_FLAG(bnc->change_flags, BGP_NEXTHOP_METRIC_CHANGED)
-		    || CHECK_FLAG(bnc->change_flags, BGP_NEXTHOP_CHANGED)
-		    || path->attr->srte_color != 0)
-			SET_FLAG(path->flags, BGP_PATH_IGP_CHANGED);
-
-		path_valid = CHECK_FLAG(path->flags, BGP_PATH_VALID);
-		if (path_valid != bnc_is_valid_nexthop) {
-			if (path_valid) {
-				/* No longer valid, clear flag; also for EVPN
-				 * routes, unimport from VRFs if needed.
-				 */
-				bgp_aggregate_decrement(bgp_path, p, path, afi,
-							safi);
-				bgp_path_info_unset_flag(dest, path,
-							 BGP_PATH_VALID);
-				if (safi == SAFI_EVPN &&
-				    bgp_evpn_is_prefix_nht_supported(bgp_dest_get_prefix(dest)))
-					bgp_evpn_unimport_route(bgp_path,
-						afi, safi, bgp_dest_get_prefix(dest), path);
-			} else {
-				/* Path becomes valid, set flag; also for EVPN
-				 * routes, import from VRFs if needed.
-				 */
-				bgp_path_info_set_flag(dest, path,
-						       BGP_PATH_VALID);
-				bgp_aggregate_increment(bgp_path, p, path, afi,
-							safi);
-				if (safi == SAFI_EVPN &&
-				    bgp_evpn_is_prefix_nht_supported(bgp_dest_get_prefix(dest)))
-					bgp_evpn_import_route(bgp_path,
-						afi, safi, bgp_dest_get_prefix(dest), path);
-			}
-		}
-
-		bgp_process(bgp_path, dest, afi, safi);
 	}
 
 	if (peer) {
@@ -1308,6 +1437,20 @@ void evaluate_paths(struct bgp_nexthop_cache *bnc)
 	}
 
 	RESET_FLAG(bnc->change_flags);
+}
+void path_tenh_map(struct bgp_path_info *path, struct bgp_nexthop_cache *te_bnc,
+		 bool make)
+{
+	if (path->te_nexthop) {
+		LIST_REMOVE(path, te_nh_thread);
+		path->te_nexthop->path_count--;
+		path->te_nexthop = NULL;
+	}
+	if (make) {
+		LIST_INSERT_HEAD(&(te_bnc->paths), path, te_nh_thread);
+		path->te_nexthop = te_bnc;
+		path->te_nexthop->path_count++;
+	}
 }
 
 /**

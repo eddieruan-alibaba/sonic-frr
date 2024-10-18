@@ -50,6 +50,8 @@ PREDECL_LIST(rnh_list);
 
 /* Nexthop structure. */
 struct rnh {
+    struct rnh *next;
+    struct rnh *prev;
 	uint8_t flags;
 
 #define ZEBRA_NHT_CONNECTED 0x1
@@ -79,6 +81,9 @@ struct rnh {
 	int filtered[ZEBRA_ROUTE_MAX];
 
 	struct rnh_list_item rnh_list_item;
+	uint32_t srte_color;
+    enum zebra_sr_policy_status srp_status;
+	struct zebra_sr_policy *policy;
 };
 
 #define DISTANCE_INFINITY  255

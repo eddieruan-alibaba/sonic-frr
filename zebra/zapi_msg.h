@@ -103,7 +103,7 @@ extern int zsend_label_manager_connect_response(struct zserv *client,
 						vrf_id_t vrf_id,
 						unsigned short result);
 extern int zsend_sr_policy_notify_status(uint32_t color,
-					 struct ipaddr *endpoint, char *name,
+					 struct route_node *rn, char *name,
 					 int status);
 extern void zsend_nhrp_neighbor_notify(int cmd, struct interface *ifp,
 				       struct ipaddr *ipaddr, int ndm_state,

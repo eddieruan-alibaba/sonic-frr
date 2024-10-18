@@ -1452,6 +1452,31 @@ static ssize_t fill_seg6ipt_encap(char *buffer, size_t buflen,
 	return srhlen + 4;
 }
 
+static ssize_t fill_seg6ipt_encap_private(char *buffer, size_t buflen,
+				  const struct in6_addr *seg, const struct in6_addr *src,
+				  const char *segment_name)
+{
+	struct seg6_iptunnel_encap_pri *ipt;
+	struct ipv6_sr_hdr *srh;
+	const size_t srhlen = 40 + 8 + 64;
+	if (buflen < (sizeof(struct seg6_iptunnel_encap_pri) +
+		      sizeof(struct ipv6_sr_hdr) + 16))
+		return -1;
+	memset(buffer, 0, buflen);
+	ipt = (struct seg6_iptunnel_encap_pri *)buffer;
+	ipt->mode = SEG6_IPTUN_MODE_ENCAP;
+	srh = ipt->srh;
+	srh->hdrlen = (srhlen >> 3) - 1;
+	srh->type = 4;
+	srh->segments_left = 0;
+	srh->first_segment = 0;
+	memcpy(&srh->segments[0], seg, sizeof(struct in6_addr));
+	if(src != NULL)
+	    memcpy(&ipt->src, src, sizeof(struct in6_addr));
+	if (segment_name != NULL)
+		memcpy(ipt->segment_name, segment_name, 64);
+	return srhlen + 4;
+}
 /* This function takes a nexthop as argument and adds
  * the appropriate netlink attributes to an existing
  * netlink message.
@@ -2614,6 +2639,7 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 			switch (nh->type) {
 			case NEXTHOP_TYPE_IPV4:
 			case NEXTHOP_TYPE_IPV4_IFINDEX:
+			case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 				if (!nl_attr_put(&req->n, buflen, NHA_GATEWAY,
 						 &nh->gate.ipv4,
 						 IPV4_MAX_BYTELEN))
@@ -2621,6 +2647,7 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 				break;
 			case NEXTHOP_TYPE_IPV6:
 			case NEXTHOP_TYPE_IPV6_IFINDEX:
+			case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 				if (!nl_attr_put(&req->n, buflen, NHA_GATEWAY,
 						 &nh->gate.ipv6,
 						 IPV6_MAX_BYTELEN))
@@ -2684,6 +2711,7 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 			}
 
 			if (nh->nh_srv6) {
+				/*
 				if (nh->nh_srv6->seg6local_action !=
 				    ZEBRA_SEG6_LOCAL_ACTION_UNSPEC) {
 					uint32_t action;
@@ -2793,7 +2821,7 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 					}
 					nl_attr_nest_end(&req->n, nest);
 				}
-
+				*/
 				if (!sid_zero(&nh->nh_srv6->seg6_segs)) {
 					char tun_buf[4096];
 					ssize_t tun_len;
@@ -2807,9 +2835,17 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 					    NHA_ENCAP | NLA_F_NESTED);
 					if (!nest)
 						return 0;
+					if (fpm) {
+					tun_len = fill_seg6ipt_encap_private(tun_buf,
+						sizeof(tun_buf),
+						&nh->nh_srv6->seg6_segs,
+						&nh->nh_srv6->seg6_src, NULL);
+					}
+					else{
 					tun_len = fill_seg6ipt_encap(tun_buf,
 					    sizeof(tun_buf),
 					    &nh->nh_srv6->seg6_segs);
+					}				
 					if (tun_len < 0)
 						return 0;
 					if (!nl_attr_put(&req->n, buflen,
@@ -2818,6 +2854,47 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 						return 0;
 					nl_attr_nest_end(&req->n, nest);
 				}
+			}else if (nh->type == NEXTHOP_TYPE_IPV4_SEGMENTLIST
+				|| nh->type == NEXTHOP_TYPE_IPV6_SEGMENTLIST){
+				char tun_buf[4096];
+				ssize_t tun_len;
+				struct rtattr *nest;
+				struct in6_addr segs = {0};
+				if (!nl_attr_put16(&req->n, buflen,
+					NHA_ENCAP_TYPE,
+					LWTUNNEL_ENCAP_SEG6))
+					return 0;
+				nest = nl_attr_nest(&req->n, buflen,
+					NHA_ENCAP);
+				if (!nest)
+					return 0;
+				tun_len = fill_seg6ipt_encap_private(tun_buf,
+						sizeof(tun_buf), &segs,
+						&nh->seg6_src, nh->sidlist_name);
+				if (tun_len < 0)
+					return 0;
+				if (IS_ZEBRA_DEBUG_KERNEL)
+					zlog_debug("%s: id %d src %pI6 segment %s flag %d", __func__, id,
+						&nh->seg6_src, nh->sidlist_name);
+				if (!nl_attr_put(&req->n, buflen,
+							SEG6_IPTUNNEL_SRH,
+							tun_buf, tun_len))
+					return 0;
+				nl_attr_nest_end(&req->n, nest);
+			}else if (!sid_zero(&nh->seg6_src)) {
+				encap = LWTUNNEL_ENCAP_IP6;
+				if (!nl_attr_put16(&req->n, buflen,
+						   NHA_ENCAP_TYPE, encap))
+					return 0;
+				nest = nl_attr_nest(&req->n, buflen, NHA_ENCAP);
+				if (!nest)
+					return 0;
+				if (!nl_attr_put(
+						    &req->n, buflen,
+						    LWTUNNEL_IP6_SRC, &nh->seg6_src,
+						    sizeof(struct in6_addr)))
+					return 0;
+				nl_attr_nest_end(&req->n, nest);
 			}
 
 nexthop_done:

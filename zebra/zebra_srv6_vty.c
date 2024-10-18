@@ -29,12 +29,14 @@
 #include "vrf.h"
 #include "srv6.h"
 #include "lib/json.h"
+#include "termtable.h"
 
 #include "zebra/zserv.h"
 #include "zebra/zebra_router.h"
 #include "zebra/zebra_vrf.h"
 #include "zebra/zebra_srv6.h"
 #include "zebra/zebra_srv6_vty.h"
+#include "zebra/zebra_srte.h"
 #include "zebra/zebra_rnh.h"
 #include "zebra/redistribute.h"
 #include "zebra/zebra_routemap.h"
@@ -138,6 +140,93 @@ static struct seg6_sid *sid_lookup_by_vrf_action(struct srv6_locator *loc,
 	}
 	return NULL;
 }
+const char *policystatus2str(enum zebra_sr_policy_status status, struct zebra_sr_policy_show_para *para)
+{
+	switch (status) {
+	case ZEBRA_SR_POLICY_UP:
+		para->active_count++;
+		return "Active";
+	case ZEBRA_SR_POLICY_DOWN:
+		para->inactive_count++;
+		return "Inactive";
+	case ZEBRA_SR_POLICY_INIT:
+		para->init_count++;
+		return "Init";
+	default:
+		break;
+	}
+	return NULL;
+}
+static int zebra_show_sr_policy_walk(struct hash_bucket *hb, void *arg)
+{
+	struct zebra_sr_policy *policy;
+	struct route_node *rn;
+	struct ttable *tt;
+	struct zebra_sr_policy_show_para *para = arg;
+	struct srte_table_key *srte_key_table = NULL;
+	srte_key_table = hb->data;
+	if (!srte_key_table || !srte_key_table->table) {
+		return 0;
+	}
+	tt = para->tt;
+	for (rn = route_top(srte_key_table->table); rn; rn = route_next(rn)) {
+		policy = rn->info;
+		if (!policy)
+			continue;
+		char endpoint[60];
+		char binding_sid[16] = "-";
+		char segmentlist_old[4096] = {0};
+		char segmentlist[4096] = {0};
+		strcat(segmentlist_old, "[ ");
+		for(uint32_t i = 0; i < policy->srv6_segment_list.path_num_old; i++) {
+			char buf[80] = {0};
+			sprintf(buf, "(%s-%d-0x%x)", policy->srv6_segment_list.sidlists_old[i].sidlist_name,
+				policy->srv6_segment_list.sidlists_old[i].weight, policy->srv6_segment_list.sidlists_old[i].type);
+			strcat(segmentlist_old, buf);
+		}
+		strcat(segmentlist_old, " ]");
+		strcat(segmentlist, "[ ");
+		for(uint32_t i = 0; i < policy->srv6_segment_list.path_num; i++) {
+			char buf[80] = {0};
+			sprintf(buf, "(%s-%d-0x%x)", policy->srv6_segment_list.sidlists[i].sidlist_name,
+				policy->srv6_segment_list.sidlists[i].weight, policy->srv6_segment_list.sidlists[i].type);
+			strcat(segmentlist, buf);
+		}
+		strcat(segmentlist, " ]");
+		inet_ntop(rn->p.family, &rn->p.u.prefix, endpoint, 60);
+		ttable_add_row(tt, "%s|%u|%s|%s|%s|%s|%s", endpoint, policy->color,
+			       policy->name, binding_sid,
+			       policystatus2str(policy->status, para),
+				   segmentlist_old, segmentlist);
+	}
+	return 0;
+}
+DEFUN (show_srv6_tunnel,
+       show_srv6_tunnel_cmd,
+       "show srv6 tunnel [detail]",
+       SHOW_STR
+       "Segment Routing SRv6\n"
+       "tunnel info\n"
+       "Show a detailed summary\n")
+{
+	struct ttable *tt;
+	char *table;
+	struct zebra_sr_policy_show_para para = {0};
+	tt = ttable_new(&ttable_styles[TTSTYLE_BLANK]);
+	ttable_add_row(tt, "Endpoint|Color|Name|BSID|Status|SegmentList_old|SegmentList");
+	tt->style.cell.rpad = 2;
+	tt->style.corner = '+';
+	ttable_restyle(tt);
+	ttable_rowseps(tt, 0, BOTTOM, true, '-');
+	para.vty = vty;
+	para.tt = tt;
+	hash_walk(srte_table_hash, zebra_show_sr_policy_walk, &para);
+	table = ttable_dump(tt, "\n");
+	vty_out(vty, "%s\n", table);
+	XFREE(MTYPE_TMP, table);
+	ttable_del(tt);
+	return CMD_SUCCESS;
+}
 
 DEFUN (show_srv6_locator,
        show_srv6_locator_cmd,
@@ -207,11 +296,11 @@ DEFUN (show_srv6_locator_detail,
 	struct srv6_locator *locator;
 	struct listnode *node;
 	struct listnode *sidnode;
+	struct seg6_sid *sid = NULL;
 	char str[256];
+	char buf[256];
 	const char *locator_name = argv[4]->arg;
 	json_object *json_locator = NULL;
-	struct seg6_sid *sid = NULL;
-	char buf[256];
 
 	if (uj) {
 		locator = zebra_srv6_locator_lookup(locator_name);

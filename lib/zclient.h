@@ -85,6 +85,10 @@ typedef uint16_t zebra_size_t;
 #define ZEBRA_FEC_REGISTER_LABEL          0x1
 #define ZEBRA_FEC_REGISTER_LABEL_INDEX    0x2
 
+#define NEXTHOP_REGISTER_TYPE_DEFAULT 0
+#define NEXTHOP_REGISTER_TYPE_COLOR   1
+#define NEXTHOP_REGISTER_FLAG_EXTRAMATCH     0x01
+#define NEXTHOP_REGISTER_FLAG_USERDATA       0x02
 #define ZEBRA_SID_INDEX_MAX_NUM 8
 #define ZEBRA_SID_LIST_MAX_NUM 16
 /* Client capabilities */
@@ -155,6 +159,8 @@ typedef enum {
 	ZEBRA_SR_POLICY_SET,
 	ZEBRA_SR_POLICY_DELETE,
 	ZEBRA_SR_POLICY_NOTIFY_STATUS,
+	ZEBRA_SRV6_POLICY_SET,
+	ZEBRA_SRV6_POLICY_DELETE,
 	ZEBRA_SRV6_SIDLIST_SET,
 	ZEBRA_SRV6_SIDLIST_DELETE,
 	ZEBRA_IPMR_ROUTE_STATS,
@@ -426,7 +432,7 @@ struct zapi_nexthop {
 	enum nexthop_types_t type;
 	vrf_id_t vrf_id;
 	ifindex_t ifindex;
-	uint8_t flags;
+	uint32_t flags;
 	union {
 		union g_addr gate;
 		enum blackhole_type bh_type;
@@ -454,6 +460,7 @@ struct zapi_nexthop {
 	/* SRv6 Headend-behaviour */
 	struct in6_addr seg6_segs;
 	struct in6_addr seg6_src;
+	char sidlist_name[SRTE_SEGMENTLIST_NAME_MAX_LENGTH];
 };
 
 /*
@@ -470,6 +477,7 @@ struct zapi_nexthop {
 #define ZAPI_NEXTHOP_FLAG_SEG6LOCAL	0x20
 #define ZAPI_NEXTHOP_FLAG_EVPN		0x40
 #define ZAPI_NEXTHOP_FLAG_SEG6_SRC		0x80
+#define ZAPI_NEXTHOP_FLAG_SRTE      0x100
 
 /*
  * ZAPI Nexthop Group. For use with protocol creation of nexthop groups.
@@ -564,6 +572,7 @@ struct zapi_route {
  */
 #define ZEBRA_FLAG_OUTOFSYNC          0x400
 
+#define ZEBRA_FLAG_LOCAL_SID_ROUTE    0x1000
 /*
  * This flag lets us know that the route entry is set to bypass
  * kernel for some reason (e.g. route-map, etc)
@@ -646,6 +655,7 @@ enum zapi_srte_segment_sid_type {
 	ZAPI_SRTE_SEGMENT_SID_TYPE_V6 = 1,
 	ZAPI_SRTE_SEGMENT_SID_TYPE_MPLS = 2,
 };
+
 struct zapi_srte_segment_entry {
 	uint32_t index;
     enum zapi_srte_segment_sid_type sid_type;
@@ -659,11 +669,34 @@ struct zapi_srv6_sidlist{
 	struct zapi_srte_segment_entry segments[ZEBRA_SID_INDEX_MAX_NUM];
 };
 
+enum zapi_srte_tunnel_type {
+	SRTE_TUNNEL_TYPE_UNKNOWN = 0,
+	SRTE_TUNNEL_TYPE_SRMPLS = 1,
+	SRTE_TUNNEL_TYPE_SRV6 = 2,
+};
+
+struct zapi_srv6_active_sidlist{
+	char sidlist_name[SRTE_SEGMENTLIST_NAME_MAX_LENGTH];
+	uint32_t type;
+#define SRV6_SID_LIST_ADD 0x01
+#define SRV6_SID_LIST_UPDATE 0x02
+#define SRV6_SID_LIST_DEL 0x04
+	uint8_t weight;
+};
+struct zapi_srv6te_tunnel {
+	uint8_t path_num;
+	uint8_t path_num_old;
+	struct zapi_srv6_active_sidlist sidlists[ZEBRA_SID_LIST_MAX_NUM];
+	struct zapi_srv6_active_sidlist sidlists_old[ZEBRA_SID_LIST_MAX_NUM];
+};
 struct zapi_sr_policy {
 	uint32_t color;
 	struct prefix endpoint;
 	char name[SRTE_POLICY_NAME_MAX_LENGTH];
+	enum zapi_srte_tunnel_type tunnel_type;  //sr-mpls. or srv6
 	struct zapi_srte_tunnel segment_list;
+	/*srv6 tunnel*/
+	struct zapi_srv6te_tunnel srv6_tunnel;
 	int status;
 };
 
@@ -1102,6 +1135,9 @@ extern enum zclient_send_status zebra_send_sr_policy(struct zclient *zclient,
 extern int zapi_sr_policy_encode(struct stream *s, int cmd,
 				 struct zapi_sr_policy *zp);
 extern int zapi_sr_policy_decode(struct stream *s, struct zapi_sr_policy *zp);
+extern int zapi_srv6_policy_encode(struct stream *s, int cmd,
+				 struct zapi_sr_policy *zp);
+extern int zapi_srv6_policy_decode(struct stream *s, struct zapi_sr_policy *zp);
 extern int zapi_srv6_sidlist_encode(struct stream *s, int cmd,
 				 struct zapi_srv6_sidlist *sidlist);
 extern int zapi_srv6_sidlist_decode(struct stream *s, struct zapi_srv6_sidlist *sidlist);
@@ -1136,7 +1172,7 @@ extern enum zclient_send_status zclient_route_send(uint8_t, struct zclient *,
 extern enum zclient_send_status
 zclient_send_rnh(struct zclient *zclient, int command, const struct prefix *p,
 		 safi_t safi, bool connected, bool resolve_via_default,
-		 vrf_id_t vrf_id);
+		 vrf_id_t vrf_id, uint32_t type, void* userdata);
 int zapi_nexthop_encode(struct stream *s, const struct zapi_nexthop *api_nh,
 			uint32_t api_flags, uint32_t api_message);
 extern int zapi_route_encode(uint8_t, struct stream *, struct zapi_route *);

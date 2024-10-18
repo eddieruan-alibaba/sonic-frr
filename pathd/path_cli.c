@@ -119,7 +119,7 @@ DEFPY(show_srte_policy,
 
 	/* Prepare table. */
 	tt = ttable_new(&ttable_styles[TTSTYLE_BLANK]);
-	ttable_add_row(tt, "Endpoint|Color|Name|BSID|Status");
+	ttable_add_row(tt, "Endpoint|Color|Name|BSID|Status|Type");
 	tt->style.cell.rpad = 2;
 	tt->style.corner = '+';
 	ttable_restyle(tt);
@@ -134,11 +134,12 @@ DEFPY(show_srte_policy,
 			snprintf(binding_sid, sizeof(binding_sid), "%u",
 				 policy->binding_sid);
 
-		ttable_add_row(tt, "%s|%u|%s|%s|%s", endpoint, policy->color,
-			       policy->name, binding_sid,
-			       policy->status == SRTE_POLICY_STATUS_UP
-				       ? "Active"
-				       : "Inactive");
+		ttable_add_row(tt, "%s|%u|%s|%s|%s|%s", endpoint, policy->color,
+				policy->name, binding_sid,
+				policy->status == SRTE_POLICY_STATUS_UP
+					? "Active"
+					: "Inactive",
+				CHECK_FLAG(policy->flags, F_POLICY_SRV6TE) ? "SRv6TE" : "SRTE");
 	}
 
 	/* Dump the generated table. */
@@ -816,13 +817,41 @@ void cli_show_srte_policy_binding_sid(struct vty *vty,
 DEFPY_YANG(srte_policy_candidate_exp,
       srte_policy_candidate_exp_cmd,
       "candidate-path preference (0-4294967295)$preference name WORD$name \
-	 explicit segment-list WORD$list_name [weight$has_weight (1-4294967295)$weight_val]",
+	 explicit segment-list WORD$list_name",
       "Segment Routing Policy Candidate Path\n"
       "Segment Routing Policy Candidate Path Preference\n"
       "Administrative Preference\n"
       "Segment Routing Policy Candidate Path Name\n"
       "Symbolic Name\n"
       "Explicit Path\n"
+      "List of SIDs\n"
+      "Name of the Segment List\n")
+{
+	char xpath[XPATH_MAXLEN + XPATH_CANDIDATE_BASELEN];
+	snprintf(xpath, sizeof(xpath),
+	    "%s/candidate-path[preference='%s'][name='%s']",
+		 VTY_CURR_XPATH, preference_str, name);
+	nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
+	// nb_cli_enqueue_change(vty, "./name", NB_OP_MODIFY, name);
+	nb_cli_enqueue_change(vty, "./protocol-origin", NB_OP_MODIFY, "local");
+	nb_cli_enqueue_change(vty, "./originator", NB_OP_MODIFY, "config");
+	nb_cli_enqueue_change(vty, "./type", NB_OP_MODIFY, "explicit");
+	nb_cli_enqueue_change(vty, "./segment-list-name", NB_OP_MODIFY, list_name);
+
+	return nb_cli_apply_changes(vty, "./candidate-path[preference='%s'][name='%s']",
+				    preference_str, name);
+}
+
+DEFPY_YANG(srte_policy_candidate_expsrv6,
+      srte_policy_candidate_expsrv6_cmd,
+      "candidate-path preference (0-4294967295)$preference name WORD$name \
+	 explicit-srv6 segment-list WORD$list_name [weight$has_weight (1-4294967295)$weight_val]",
+      "Segment Routing Policy Candidate Path\n"
+      "Segment Routing Policy Candidate Path Preference\n"
+      "Administrative Preference\n"
+      "Segment Routing Policy Candidate Path Name\n"
+      "Symbolic Name\n"
+      "Explicit SRv6 Path\n"
       "List of SIDs\n"
       "Name of the Segment List\n"
 	  "Set Weight of Candidate Path\n"
@@ -836,7 +865,7 @@ DEFPY_YANG(srte_policy_candidate_exp,
 	// nb_cli_enqueue_change(vty, "./name", NB_OP_MODIFY, name);
 	nb_cli_enqueue_change(vty, "./protocol-origin", NB_OP_MODIFY, "local");
 	nb_cli_enqueue_change(vty, "./originator", NB_OP_MODIFY, "config");
-	nb_cli_enqueue_change(vty, "./type", NB_OP_MODIFY, "explicit");
+	nb_cli_enqueue_change(vty, "./type", NB_OP_MODIFY, "explicit-srv6");
 	nb_cli_enqueue_change(vty, "./segment-list-name", NB_OP_MODIFY, list_name);
 	if (has_weight != NULL)
 	{
@@ -1363,8 +1392,17 @@ void cli_show_srte_policy_candidate_path(struct vty *vty,
 		yang_dnode_get_string(dnode, "./preference"),
 		yang_dnode_get_string(dnode, "./name"), type);
 	if (strmatch(type, "explicit"))
+	{
 		vty_out(vty, " segment-list %s",
-			yang_dnode_get_string(dnode, "./segment-list-name"));
+			yang_dnode_get_string(dnode, "segment-list-name"));
+	}
+	if (strmatch(type, "explicit-srv6"))
+	{
+		vty_out(vty, " segment-list %s",
+			yang_dnode_get_string(dnode, "segment-list-name"));
+		vty_out(vty, " weight %s",
+			yang_dnode_get_string(dnode, "weight"));
+	}
 	vty_out(vty, "\n");
 
 	if (strmatch(type, "dynamic")) {
@@ -1520,6 +1558,7 @@ void path_cli_init(void)
 	install_element(SR_POLICY_NODE, &srte_policy_binding_sid_cmd);
 	install_element(SR_POLICY_NODE, &srte_policy_no_binding_sid_cmd);
 	install_element(SR_POLICY_NODE, &srte_policy_candidate_exp_cmd);
+	install_element(SR_POLICY_NODE, &srte_policy_candidate_expsrv6_cmd);
 	install_element(SR_POLICY_NODE, &srte_policy_candidate_dyn_cmd);
 	install_element(SR_POLICY_NODE, &srte_policy_no_candidate_cmd);
 	install_element(SR_CANDIDATE_DYN_NODE,

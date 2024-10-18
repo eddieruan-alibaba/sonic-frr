@@ -251,6 +251,9 @@ module frr-pathd {
               enum dynamic {
                 value 2;
               }
+              enum explicit-srv6 {
+                value 3;
+              }
             }
           }
           leaf weight {

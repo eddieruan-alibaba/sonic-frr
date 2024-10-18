@@ -1182,7 +1182,9 @@ static bool update_ipv4nh_for_route_install(int nh_othervrf, struct bgp *nh_bgp,
 	} else if (nh_othervrf && api_nh->gate.ipv4.s_addr == INADDR_ANY) {
 		api_nh->type = NEXTHOP_TYPE_IFINDEX;
 		api_nh->ifindex = attr->nh_ifindex;
-	} else
+	} else if (CHECK_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SRTE))
+		api_nh->type = NEXTHOP_TYPE_IPV4_SEGMENTLIST;
+	else
 		api_nh->type = NEXTHOP_TYPE_IPV4;
 
 	return true;
@@ -1227,6 +1229,9 @@ static bool update_ipv6nh_for_route_install(int nh_othervrf, struct bgp *nh_bgp,
 				return false;
 			api_nh->type = NEXTHOP_TYPE_IPV6_IFINDEX;
 			api_nh->ifindex = ifindex;
+		} else if (CHECK_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SRTE)) {
+			api_nh->type = NEXTHOP_TYPE_IPV6_SEGMENTLIST;
+			api_nh->ifindex = 0;
 		} else {
 			api_nh->type = NEXTHOP_TYPE_IPV6;
 			api_nh->ifindex = 0;
@@ -1255,6 +1260,9 @@ static bool update_ipv6nh_for_route_install(int nh_othervrf, struct bgp *nh_bgp,
 				return false;
 			api_nh->type = NEXTHOP_TYPE_IPV6_IFINDEX;
 			api_nh->ifindex = ifindex;
+		} else if (CHECK_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SRTE)) {
+			api_nh->type = NEXTHOP_TYPE_IPV6_SEGMENTLIST;
+			api_nh->ifindex = 0;
 		} else {
 			api_nh->type = NEXTHOP_TYPE_IPV6;
 			api_nh->ifindex = 0;
@@ -1467,7 +1475,11 @@ void bgp_zebra_announce(struct bgp_dest *dest, const struct prefix *p,
 				tag = mpinfo_cp->attr->tag;
 			}
 		}
-
+		if (mpinfo->te_nexthop && CHECK_FLAG(mpinfo->te_nexthop->flags, BGP_NEXTHOP_SRV6TE_VALID))
+		{
+			SET_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SRTE);
+			api_nh->srte_color = mpinfo->te_nexthop->srte_color;
+		}
 		BGP_ORIGINAL_UPDATE(bgp_orig, mpinfo, bgp);
 
 		if (nh_family == AF_INET) {
@@ -1655,7 +1667,7 @@ void bgp_zebra_announce(struct bgp_dest *dest, const struct prefix *p,
 		char eth_buf[ETHER_ADDR_STRLEN + 7] = {'\0'};
 		char buf1[ETHER_ADDR_STRLEN];
 		char label_buf[20];
-		char sid_buf[20];
+		char sid_buf[80];
 		char segs_buf[256];
 		int i;
 
@@ -1673,12 +1685,14 @@ void bgp_zebra_announce(struct bgp_dest *dest, const struct prefix *p,
 				break;
 			case NEXTHOP_TYPE_IPV4:
 			case NEXTHOP_TYPE_IPV4_IFINDEX:
+			case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 				nh_family = AF_INET;
 				inet_ntop(nh_family, &api_nh->gate, nh_buf,
 					  sizeof(nh_buf));
 				break;
 			case NEXTHOP_TYPE_IPV6:
 			case NEXTHOP_TYPE_IPV6_IFINDEX:
+			case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 				nh_family = AF_INET6;
 				inet_ntop(nh_family, &api_nh->gate, nh_buf,
 					  sizeof(nh_buf));
@@ -1713,8 +1727,9 @@ void bgp_zebra_announce(struct bgp_dest *dest, const struct prefix *p,
 				snprintf(eth_buf, sizeof(eth_buf), " RMAC %s",
 					 prefix_mac2str(&api_nh->rmac,
 							buf1, sizeof(buf1)));
-			zlog_debug("  nhop [%d]: %s if %u VRF %u wt %u %s %s %s",
-				   i + 1, nh_buf, api_nh->ifindex,
+			zlog_debug("  nhop [%d]: type %u %s if %u VRF %u wt %u %s %s %s",
+				   i + 1,api_nh->type,
+				   nh_buf, api_nh->ifindex,
 				   api_nh->vrf_id, api_nh->weight,
 				   label_buf, segs_buf, eth_buf);
 		}

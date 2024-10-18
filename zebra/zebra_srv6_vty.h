@@ -24,6 +24,13 @@
 #define ZEBRA_SRV6_LOCATOR_NODE_LENGTH 24
 #define ZEBRA_SRV6_FUNCTION_LENGTH 16
 
+struct zebra_sr_policy_show_para {
+	struct vty *vty;
+	struct ttable *tt;
+	int init_count;
+	int active_count;
+	int inactive_count;
+};
 extern void zebra_srv6_vty_init(void);
 
 #endif /* _ZEBRA_SRV6_VTY_H */

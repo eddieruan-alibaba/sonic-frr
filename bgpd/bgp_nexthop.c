@@ -65,6 +65,10 @@ int bgp_nexthop_cache_compare(const struct bgp_nexthop_cache *a,
 	return prefix_cmp(&a->prefix, &b->prefix);
 }
 
+const char *bnc_str(struct bgp_nexthop_cache *bnc, char *buf, int size)
+{
+	return prefix2str(&bnc->prefix, buf, size);
+}
 void bnc_nexthop_free(struct bgp_nexthop_cache *bnc)
 {
 	nexthops_free(bnc->nexthop);
@@ -95,7 +99,7 @@ bool bnc_existing_for_prefix(struct bgp_nexthop_cache *bnc)
 	frr_each (bgp_nexthop_cache, bnc->tree, bnc_tmp) {
 		if (bnc_tmp == bnc)
 			continue;
-		if (prefix_cmp(&bnc->prefix, &bnc_tmp->prefix) == 0)
+		if ((prefix_cmp(&bnc->prefix, &bnc_tmp->prefix) == 0) && (bnc->srte_color == bnc_tmp->srte_color))
 			return true;
 	}
 	return false;
@@ -855,6 +859,7 @@ static void bgp_show_nexthops_detail(struct vty *vty, struct bgp *bgp,
 				     json_object *json)
 {
 	struct nexthop *nexthop;
+	char buf[PREFIX2STR_BUFFER];
 	json_object *json_gates = NULL;
 	json_object *json_gate = NULL;
 
@@ -955,6 +960,16 @@ static void bgp_show_nexthops_detail(struct vty *vty, struct bgp *bgp,
 			break;
 		case NEXTHOP_TYPE_BLACKHOLE:
 			vty_out(vty, "  blackhole\n");
+			break;
+		case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+			vty_out(vty, "  gate %s  segment-list\n",
+				inet_ntop(AF_INET, &nexthop->gate.ipv4, buf,
+					  sizeof(buf)));
+			break;
+		case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
+			vty_out(vty, "  gate %s  segment-list\n",
+				inet_ntop(AF_INET6, &nexthop->gate.ipv6, buf,
+					  sizeof(buf)));
 			break;
 		default:
 			vty_out(vty, "  invalid nexthop type %u\n",

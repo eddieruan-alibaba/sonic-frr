@@ -151,6 +151,10 @@ struct wq_nhg_wrapper {
 	} u;
 };
 
+struct nhe_update_context {
+	struct nexthop *nexthop;
+	afi_t afi;
+};
 #define WQ_NHG_WRAPPER_TYPE_CTX  0x01
 #define WQ_NHG_WRAPPER_TYPE_NHG  0x02
 
@@ -371,6 +375,9 @@ static void route_entry_attach_ref(struct route_entry *re,
 	if (new->pic_nhe)
 		re->pic_nhe_id = new->pic_nhe->id;
 	
+	if (CHECK_FLAG(new->flags, NEXTHOP_GROUP_SEGMENTLIST))
+		zebra_nhg_seg_increment_ref(new);
+	else
 	zebra_nhg_increment_ref(new);
 }
 
@@ -402,8 +409,12 @@ int route_entry_update_nhe(struct route_entry *re,
 
 done:
 	/* Detach / deref previous nhg */
-	if (old_nhg)
+	if (old_nhg) {
+		if (CHECK_FLAG(old_nhg->flags, NEXTHOP_GROUP_SEGMENTLIST))
+			zebra_nhg_seg_decrement_ref(old_nhg);
+		else
 		zebra_nhg_decrement_ref(old_nhg);
+	}
 
 	return ret;
 }
@@ -689,6 +700,9 @@ void rib_install_kernel(struct route_node *rn, struct route_entry *re,
 	/*
 	 * Install the resolved nexthop object first.
 	 */
+	if (CHECK_FLAG(re->nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
+		zebra_nhg_seg_install_kernel(re->nhe);
+	else
 	zebra_nhg_install_kernel(re->nhe);
 
 	/*
@@ -3947,6 +3961,7 @@ static void _route_entry_dump_nh(const struct route_entry *re,
 	char nhname[PREFIX_STRLEN];
 	char backup_str[50];
 	char wgt_str[50];
+	char color_srt[50];
 	char temp_str[10];
 	char label_str[MPLS_LABEL_STRLEN];
 	int i;
@@ -3965,10 +3980,12 @@ static void _route_entry_dump_nh(const struct route_entry *re,
 	case NEXTHOP_TYPE_IPV4:
 		/* fallthrough */
 	case NEXTHOP_TYPE_IPV4_IFINDEX:
+	case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 		inet_ntop(AF_INET, &nexthop->gate, nhname, INET6_ADDRSTRLEN);
 		break;
 	case NEXTHOP_TYPE_IPV6:
 	case NEXTHOP_TYPE_IPV6_IFINDEX:
+	case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 		inet_ntop(AF_INET6, &nexthop->gate, nhname, INET6_ADDRSTRLEN);
 		break;
 	}
@@ -3995,6 +4012,9 @@ static void _route_entry_dump_nh(const struct route_entry *re,
 	wgt_str[0] = '\0';
 	if (nexthop->weight)
 		snprintf(wgt_str, sizeof(wgt_str), "wgt %d,", nexthop->weight);
+	color_srt[0] = '\0';
+	if (nexthop->srte_color)
+		snprintf(color_srt, sizeof(color_srt), "color %d,", nexthop->srte_color);
 
 	zlog_debug("%s: %s %s[%u] %svrf %s(%u) %s%s with flags %s%s%s%s%s%s%s%s%s",
 		   straddr, (nexthop->rparent ? "  NH" : "NH"), nhname,
@@ -4774,6 +4794,10 @@ static void rib_process_dplane_results(struct thread *thread)
 			case DPLANE_OP_NEIGH_TABLE_UPDATE:
 			case DPLANE_OP_GRE_SET:
 			case DPLANE_OP_NONE:
+				break;
+			case DPLANE_OP_SID_LIST_INSTALL:
+			case DPLANE_OP_SID_LIST_UPDATE:
+			case DPLANE_OP_SID_LIST_DELETE:
 				break;
 
 			} /* Dispatch by op code */

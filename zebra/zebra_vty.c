@@ -359,8 +359,20 @@ static void show_nexthop_detail_helper(struct vty *vty,
 			break;
 		}
 		break;
+	case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
+		vty_out(vty, " %pI4",
+			&nexthop->gate.ipv4);
+		vty_out(vty, " segment-list %s", nexthop->sidlist_name);
+		vty_out(vty, " color %d", nexthop->srte_color);
+		break;
+	case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
+		vty_out(vty, " %s",
+			inet_ntop(AF_INET6, &nexthop->gate.ipv6,
+				  buf, sizeof(buf)));
+		vty_out(vty, " segment-list %s", nexthop->sidlist_name);
+		vty_out(vty, " color %d", nexthop->srte_color);
+		break;
 	}
-
 	if (re->vrf_id != nexthop->vrf_id) {
 		struct vrf *vrf = vrf_lookup_by_id(nexthop->vrf_id);
 
@@ -386,6 +398,7 @@ static void show_nexthop_detail_helper(struct vty *vty,
 	switch (nexthop->type) {
 	case NEXTHOP_TYPE_IPV4:
 	case NEXTHOP_TYPE_IPV4_IFINDEX:
+	case NEXTHOP_TYPE_IPV4_SEGMENTLIST:
 		if (nexthop->src.ipv4.s_addr) {
 			if (inet_ntop(AF_INET, &nexthop->src.ipv4,
 				      addrstr, sizeof(addrstr)))
@@ -396,6 +409,7 @@ static void show_nexthop_detail_helper(struct vty *vty,
 
 	case NEXTHOP_TYPE_IPV6:
 	case NEXTHOP_TYPE_IPV6_IFINDEX:
+	case NEXTHOP_TYPE_IPV6_SEGMENTLIST:
 		if (!IPV6_ADDR_SAME(&nexthop->src.ipv6,
 				    &in6addr_any)) {
 			if (inet_ntop(AF_INET6, &nexthop->src.ipv6,
@@ -1217,11 +1231,13 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		json_object_string_add(json, "uptime", up_str);
 		json_object_string_add(json, "vrf",
 				       vrf_id_to_name(nhe->vrf_id));
+		json_object_int_add(json, "flags:", nhe->flags);
 
 	} else {
 		vty_out(vty, "ID: %u (%s)\n", nhe->id,
 			zebra_route_string(nhe->type));
-		vty_out(vty, "     RefCnt: %u", nhe->refcnt);
+		vty_out(vty, "     RefCnt: %u\n", nhe->refcnt);
+		vty_out(vty, "     SRefCnt: %u\n", nhe->segment_ref);
 		if (thread_is_scheduled(nhe->timer))
 			vty_out(vty, " Time to Deletion: %s",
 				thread_timer_to_hhmmss(time_left,
@@ -1231,6 +1247,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 
 		vty_out(vty, "     Uptime: %s\n", up_str);
 		vty_out(vty, "     VRF: %s\n", vrf_id_to_name(nhe->vrf_id));
+		vty_out(vty, "     Falgs: 0x%x\n", nhe->flags);
 	}
 
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID)) {
@@ -1247,6 +1264,9 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		}
 		if (!json)
 			vty_out(vty, "\n");
+	}
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT)) {
+		vty_out(vty, "     This is a pic nhe.\n");
 	}
 	if (nhe->ifp) {
 		if (json)
