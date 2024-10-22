@@ -620,7 +620,7 @@ void cli_show_srte_segment_list_segment(struct vty *vty,
 {
 	vty_out(vty, "   index %s", yang_dnode_get_string(dnode, "./index"));
 	if (yang_dnode_exists(dnode, "./srv6-sid-value")) {
-		vty_out(vty, "ipv6-address %s",
+		vty_out(vty, " ipv6-address %s",
 			yang_dnode_get_string(dnode, "./srv6-sid-value"));
 	}
 	if (yang_dnode_exists(dnode, "./sid-value")) {
