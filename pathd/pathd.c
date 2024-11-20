@@ -1045,6 +1045,11 @@ void srte_candidate_del(struct srte_candidate *candidate)
 		}
 	}
 
+	if(candidate && candidate->bfd_name[0]){
+		srte_candidate_bfd_group_del(candidate->bfd_name, candidate);
+		candidate->bfd_name[0] = 0;
+	}
+
 	if (candidate->lsp)
 		XFREE(MTYPE_PATH_SR_CANDIDATE, candidate->lsp);
 
