@@ -283,6 +283,7 @@ void bgp_path_info_free_with_caller(const char *name,
 	bgp_attr_unintern(&path->attr);
 
 	bgp_unlink_nexthop(path);
+	bgp_unlink_te_nexthop(path);
 	bgp_path_info_extra_free(&path->extra);
 	bgp_path_info_mpath_free(&path->mpath);
 	if (path->net)
