@@ -1483,7 +1483,7 @@ struct srte_candidate_bfd_group *srte_candidate_bfd_group_add(const char *bfd_na
 		group = XCALLOC(MTYPE_PATH_SR_CANDIDATE_BFD_GROUP, sizeof(*group));
 
         group->cpath_num = 0;
-        group->status = SRTE_DETECT_NONE;
+        group->status = SRTE_DETECT_DOWN;
         strncpy(group->bfd_name, bfd_name, BFD_NAME_SIZE);
 
         RB_INIT(srte_candidate_bfd_head, &group->candidate_paths);
