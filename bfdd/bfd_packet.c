@@ -35,7 +35,6 @@
 #include "bfd.h"
 #define BUF_SIZ 1024
 #define SOCK_OPT_PRIO_HIGH 6
-
 /*
  * Prototypes
  */
@@ -65,7 +64,7 @@ int bp_raw_sbfd_red_send(int sd,  uint8_t *data, size_t datalen,
     uint16_t family, struct in6_addr* out_sip, struct in6_addr* sip , struct in6_addr* dip,
     uint16_t src_port, uint16_t dst_port,
     uint8_t seg_num, struct in6_addr* segment_list);
-
+	   
 #ifdef BFD_LINUX
 ssize_t bfd_recv_ipv4_fp(int sd, uint8_t *msgbuf, size_t msgbuflen,
 			 uint8_t *ttl, ifindex_t *ifindex,
@@ -391,7 +390,25 @@ static int ptm_bfd_process_echo_pkt(struct bfd_vrf_global *bvrf, int s)
 	/* Compute detect time */
 	bfd->echo_detect_TO = bfd->remote_detect_mult * bfd->echo_xmt_TO;
 
-	/* Update echo receive timeout. */
+	/* Update sbfd-echo session state */
+	if (bfd->bfd_mode == BFD_MODE_TYPE_SBFD_ECHO){
+		sbfd_echo_state_handler(bfd, PTM_BFD_UP);
+
+		if(bfd->echo_xmt_TO != bfd->timers.desired_min_echo_tx)
+		{
+			bfd->echo_xmt_TO = bfd->timers.desired_min_echo_tx;
+			//reset xmt timer TO after UP
+			ptm_bfd_start_xmt_timer(bfd, true);
+		}
+
+		bfd->echo_detect_TO = bfd->detect_mult * bfd->echo_xmt_TO;
+		/* Update sbfd echo receive timeout. */
+		if (bfd->echo_detect_TO > 0)
+			sbfd_echo_recvtimer_update(bfd);
+		return 0;
+	}
+
+	/* Update bfd-echo receive timeout. */
 	if (bfd->echo_detect_TO > 0)
 		bfd_echo_recvtimer_update(bfd);
 
@@ -747,6 +764,11 @@ static void bfd_sd_reschedule(struct bfd_vrf_global *bvrf, int sd)
 		event_add_read(master, bfd_recv_cb, bvrf, bvrf->bg_echov6,
 			       &bvrf->bg_ev[5]);
 	}
+	else if (sd == bvrf->bg_initv6) {
+		EVENT_OFF(bvrf->bg_ev[6]);
+		event_add_read(master, bfd_recv_cb, bvrf, bvrf->bg_initv6,
+				&bvrf->bg_ev[6]);
+	}
 }
 
 PRINTFRR(6, 7)
@@ -839,6 +861,11 @@ void bfd_recv_cb(struct event *t)
 	/* Schedule next read. */
 	bfd_sd_reschedule(bvrf, sd);
 
+	/* The reflector handle SBFD init packets. */
+	if(sd == bvrf->bg_initv6){
+		ptm_bfd_reflector_process_init_packet(bvrf, sd);
+		return;
+	}
 	/* Handle echo packets. */
 	if (sd == bvrf->bg_echo || sd == bvrf->bg_echov6) {
 		ptm_bfd_process_echo_pkt(bvrf, sd);
@@ -1012,6 +1039,30 @@ void bfd_recv_cb(struct event *t)
 		bfd->remote_cbit = 1;
 	else
 		bfd->remote_cbit = 0;
+
+	/* The sender handle SBFD init session. */
+    if (bfd->bfd_mode == BFD_MODE_TYPE_SBFD_INIT){
+		sbfd_initiator_state_handler(bfd, PTM_BFD_UP);
+		if(bfd->xmt_TO != bfd->timers.desired_min_tx)
+		{
+			bfd->xmt_TO = bfd->timers.desired_min_tx;
+			//reset xmt timer TO after UP
+			ptm_bfd_start_xmt_timer(bfd, false);
+		}
+
+		bfd->detect_TO = bfd->detect_mult * bfd->xmt_TO;
+		sbfd_init_recvtimer_update(bfd);
+
+		if (bfd->polling && BFD_GETFBIT(cp->flags)) {
+			/* Disable polling. */
+			bfd->polling = 0;
+			/* Start using our new timers. */
+			bfd->cur_timers.desired_min_tx = bfd->timers.desired_min_tx;
+			bfd->cur_timers.required_min_rx = bfd->timers.required_min_rx;
+		}
+
+		return ;
+	}
 
 	/* State switch from section 6.2. */
 	bs_state_handler(bfd, BFD_GETSTATE(cp->flags));
