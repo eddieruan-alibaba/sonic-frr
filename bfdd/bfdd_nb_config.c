@@ -752,6 +752,48 @@ int bfdd_bfd_sessions_single_hop_passive_mode_modify(
 }
 
 /*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-init/bfd-mode
+ *        /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo/bfd-mode
+ */
+int bfdd_bfd_sessions_bfd_mode_modify(
+	struct nb_cb_modify_args *args)
+{
+	uint32_t bfd_mode;
+	bfd_mode = yang_dnode_get_uint32(args->dnode, NULL);
+	struct bfd_session *bs;
+
+	switch (args->event) {
+	case NB_EV_VALIDATE:
+		if ((bfd_mode != BFD_MODE_TYPE_BFD) && (bfd_mode != BFD_MODE_TYPE_SBFD_ECHO) && (bfd_mode != BFD_MODE_TYPE_SBFD_INIT))
+		{
+			snprintf(args->errmsg, args->errmsg_len,"bfd mode is invalid.");
+			return NB_ERR_VALIDATION;
+		}
+		return NB_OK;
+	case NB_EV_PREPARE:
+		return NB_OK;
+
+	case NB_EV_APPLY:
+		break;
+
+	case NB_EV_ABORT:
+		return NB_OK;
+	}
+
+	bs = nb_running_get_entry(args->dnode, NULL, true);
+	bs->bfd_mode = bfd_mode;
+	bfd_session_apply(bs);
+
+	return NB_OK;
+}
+
+int bfdd_bfd_sessions_bfd_mode_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	return NB_OK;
+}
+
+/*
  * XPath: /frr-bfdd:bfdd/bfd/sessions/single-hop/echo-mode
  */
 int bfdd_bfd_sessions_single_hop_echo_mode_modify(
@@ -880,5 +922,124 @@ int bfdd_bfd_sessions_multi_hop_minimum_ttl_modify(
 	bs->peer_profile.minimum_ttl = yang_dnode_get_uint8(args->dnode, NULL);
 	bfd_session_apply(bs);
 
+	return NB_OK;
+}
+
+int bfdd_bfd_sessions_multi_hop_minimum_ttl_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	struct bfd_session *bs;
+
+	switch (args->event) {
+	case NB_EV_VALIDATE:
+	case NB_EV_PREPARE:
+		return NB_OK;
+
+	case NB_EV_APPLY:
+		break;
+
+	case NB_EV_ABORT:
+		return NB_OK;
+	}
+
+	bs = nb_running_get_entry(args->dnode, NULL, true);
+	bs->peer_profile.minimum_ttl = BFD_DEF_MHOP_TTL;
+	bfd_session_apply(bs);
+
+	return NB_OK;
+}
+
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo
+ */
+int bfdd_bfd_sessions_srte_sbfd_echo_create(struct nb_cb_create_args *args)
+{
+	return bfd_session_create(args, false, BFD_MODE_TYPE_SBFD_ECHO);
+}
+
+int bfdd_bfd_sessions_srte_sbfd_echo_destroy(struct nb_cb_destroy_args *args)
+{
+	return bfd_session_destroy(args->event, args->dnode, false, BFD_MODE_TYPE_SBFD_ECHO);
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo/segment-list
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-init/segment-list
+ */
+int bfdd_bfd_sessions_segment_list_modify(
+	struct nb_cb_modify_args *args)
+{
+	return NB_OK;
+}
+
+int bfdd_bfd_sessions_segment_list_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	return NB_OK;
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo/dest-addr
+ */
+int bfdd_bfd_sessions_srte_sbfd_echo_dest_addr_modify(
+	struct nb_cb_modify_args *args)
+{
+	return NB_OK;
+}
+
+int bfdd_bfd_sessions_srte_sbfd_echo_dest_addr_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	return NB_OK;
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo/echo-mode
+ */
+int bfdd_bfd_sessions_srte_sbfd_echo_mode_modify(
+	struct nb_cb_modify_args *args)
+{
+	return NB_OK;
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-echo/source-ipv6
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-init/source-ipv6
+ */
+int bfdd_bfd_sessions_srte_sbfd_source_ipv6_modify(
+	struct nb_cb_modify_args *args)
+{
+	return NB_OK;
+}
+
+int bfdd_bfd_sessions_srte_sbfd_source_ipv6_destroy(
+	struct nb_cb_destroy_args *args)
+{
+	return NB_OK;
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-init
+ */
+int bfdd_bfd_sessions_srte_sbfd_init_create(struct nb_cb_create_args *args)
+{
+	return bfd_session_create(args, false, BFD_MODE_TYPE_SBFD_INIT);
+}
+
+int bfdd_bfd_sessions_srte_sbfd_init_destroy(struct nb_cb_destroy_args *args)
+{
+	return bfd_session_destroy(args->event, args->dnode, false, BFD_MODE_TYPE_SBFD_INIT);
+}
+
+/*
+ * XPath: /frr-bfdd:bfdd/bfd/sessions/srte-sbfd-init/remote-discr
+ */
+int bfdd_bfd_sessions_srte_sbfd_init_remote_discr_modify(struct nb_cb_modify_args *args)
+{
+	return NB_OK;
+}
+int bfdd_bfd_sessions_srte_sbfd_init_remote_discr_destroy(struct nb_cb_destroy_args *args)
+{
 	return NB_OK;
 }
