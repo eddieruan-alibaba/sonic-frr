@@ -90,7 +90,7 @@ struct bfd_peer_cfg {
 	bool bpc_has_profile;
 	char bpc_profile[64];
 
-	vrf_id_t vrf_id;
+    vrf_id_t vrf_id;
     char bfd_name[BFD_NAME_SIZE +1];
     uint8_t bfd_name_len;
 };
@@ -154,6 +154,7 @@ struct bfd_echo_pkt {
 	uint64_t time_sent_usec;
 };
 
+#define BFD_XMTDEL_DELAY_TIMER               5
 
 /* Macros for manipulating control packets */
 #define BFD_VERMASK 0x07
@@ -283,6 +284,7 @@ struct bfd_session_stats {
 	uint64_t session_up;
 	uint64_t session_down;
 	uint64_t znotification;
+	uint64_t tx_fail_pkt;
 };
 
 /**
@@ -477,9 +479,10 @@ struct bfd_vrf_global {
 	int bg_mhop6;
 	int bg_echo;
 	int bg_echov6;
+	int bg_initv6;
 	struct vrf *vrf;
 
-	struct event *bg_ev[6];
+	struct event *bg_ev[7];
 };
 
 /* Forward declaration of data plane context struct. */
@@ -656,11 +659,13 @@ void bs_to_bpc(struct bfd_session *bs, struct bfd_peer_cfg *bpc);
 void gen_bfd_key(struct bfd_key *key, struct sockaddr_any *peer,
 		 struct sockaddr_any *local, bool mhop, const char *ifname,
 		 const char *vrfname, const char *bfdname);
-struct bfd_session *bfd_session_new(void);
+
+struct bfd_session *bfd_session_new(enum bfd_mode_type mode, uint8_t segnum);
+
 struct bfd_session *bs_registrate(struct bfd_session *bs);
 void bfd_session_free(struct bfd_session *bs);
 const struct bfd_session *bfd_session_next(const struct bfd_session *bs,
-					   bool mhop);
+					   bool mhop, uint32_t bfd_mode);
 void bfd_sessions_remove_manual(void);
 void bfd_profiles_remove(void);
 void bs_sbfd_echo_timer_handler(struct bfd_session *bs);
