@@ -13,14 +13,46 @@
 
 #include "bfd.h"
 #include "bfdd_nb.h"
+#include <ifaddrs.h>
 
 /*
  * Helpers.
  */
+static void get_ip_by_interface(const char *ifname, char *ifip) {
+    struct ifaddrs *ifaddr, *ifa;
+    int family;
+    char intfip[INET6_ADDRSTRLEN];
+	
+    if (getifaddrs(&ifaddr) == -1) {
+        zlog_err("getifaddrs failed, ifname: %s", ifname);
+        return;
+    }
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        family = ifa->ifa_addr->sa_family;
+
+        if (family == AF_INET || family == AF_INET6) {
+            if (strcmp(ifa->ifa_name, ifname) == 0) {
+                getnameinfo(ifa->ifa_addr,
+                            (family == AF_INET) ? sizeof(struct sockaddr_in) :
+                                                  sizeof(struct sockaddr_in6),
+                            intfip, sizeof(intfip),
+                            NULL, 0, NI_NUMERICHOST);
+				strlcpy(ifip,intfip,INET6_ADDRSTRLEN - 1);
+				break;
+            }
+        }
+    }
+	
+    freeifaddrs(ifaddr);
+}
+
 static void bfd_session_get_key(bool mhop, const struct lyd_node *dnode,
 				struct bfd_key *bk)
 {
 	const char *ifname = NULL, *vrfname = NULL;
+	char ifip[INET6_ADDRSTRLEN];
 	struct sockaddr_any psa, lsa;
 
 	/* Required destination parameter. */
@@ -37,10 +69,15 @@ static void bfd_session_get_key(bool mhop, const struct lyd_node *dnode,
 		ifname = yang_dnode_get_string(dnode, "interface");
 		if (strcmp(ifname, "*") == 0)
 			ifname = NULL;
+		if (ifname != NULL && !yang_dnode_exists(dnode, "source-addr"))
+		{
+			get_ip_by_interface(ifname,ifip);
+			strtosa(ifip, &lsa);
+		}
 	}
 
 	/* Generate the corresponding key. */
-	gen_bfd_key(bk, &psa, &lsa, mhop, ifname, vrfname);
+	gen_bfd_key(bk, &psa, &lsa, mhop, ifname, vrfname, NULL);
 }
 
 struct session_iter {

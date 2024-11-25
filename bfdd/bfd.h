@@ -260,6 +260,7 @@ struct bfd_key {
 	struct in6_addr local;
 	char ifname[IFNAMSIZ];
 	char vrfname[VRF_NAMSIZ];
+	char bfdname[MAXNAMELEN];
 } __attribute__((packed));
 
 struct bfd_session_stats {
@@ -606,7 +607,7 @@ void bs_to_bpc(struct bfd_session *bs, struct bfd_peer_cfg *bpc);
 
 void gen_bfd_key(struct bfd_key *key, struct sockaddr_any *peer,
 		 struct sockaddr_any *local, bool mhop, const char *ifname,
-		 const char *vrfname);
+		 const char *vrfname, const char *bfdname);
 struct bfd_session *bfd_session_new(void);
 struct bfd_session *bs_registrate(struct bfd_session *bs);
 void bfd_session_free(struct bfd_session *bs);
