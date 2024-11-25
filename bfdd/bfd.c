@@ -395,6 +395,9 @@ int bfd_session_enable(struct bfd_session *bs)
 	if (CHECK_FLAG(bs->flags, BFD_SESS_FLAG_PASSIVE) == 0) {
 		if (bs->bfd_mode == BFD_MODE_TYPE_SBFD_ECHO)
 		{
+			/*enable receive echo response*/
+			bfd_set_echo(bs, true);
+
 			bfd_echo_recvtimer_update(bs);
 			ptm_bfd_start_xmt_timer(bs, true);
 		}
@@ -838,9 +841,10 @@ void bfd_echo_recvtimer_cb(struct event *t)
 {
 	struct bfd_session *bs = EVENT_ARG(t);
 
-    if (bglobal.debug_peer_event)
+    if (bglobal.debug_peer_event){
         zlog_debug("%s:  time-out bfd: [%s]  bfd'state is %s",
 		    __func__,  bs_to_string(bs), state_list[bs->ses_state].str);
+	}
 
 	switch (bs->ses_state) {
 	case PTM_BFD_INIT:
@@ -870,9 +874,10 @@ void sbfd_echo_recvtimer_cb(struct event *t)
 {
 	struct bfd_session *bs = EVENT_ARG(t);
 
-    if (bglobal.debug_peer_event)
+    if (bglobal.debug_peer_event){
         zlog_debug("%s:  time-out bfd: [%s]  bfd'state is %s",
 		    __func__,  bs_to_string(bs), state_list[bs->ses_state].str);
+	}
 
 	switch (bs->ses_state) {
 	case PTM_BFD_INIT:
@@ -2352,6 +2357,7 @@ static int bfd_vrf_new(struct vrf *vrf)
 	bvrf->bg_mhop6 = -1;
 	bvrf->bg_echo = -1;
 	bvrf->bg_echov6 = -1;
+	bvrf->bg_initv6 = -1;
 
 	return 0;
 }
