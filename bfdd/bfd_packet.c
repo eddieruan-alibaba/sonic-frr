@@ -1040,7 +1040,7 @@ void bfd_recv_cb(struct event *t)
 	else
 		bfd->remote_cbit = 0;
 
-	/* The sender handle SBFD init session. */
+	/* The initiator handle SBFD reflect packet. */
     if (bfd->bfd_mode == BFD_MODE_TYPE_SBFD_INIT){
 		sbfd_initiator_state_handler(bfd, PTM_BFD_UP);
 		if(bfd->xmt_TO != bfd->timers.desired_min_tx)
@@ -1507,8 +1507,6 @@ int bp_peer_socket(const struct bfd_session *bs)
 	sin.sin_len = sizeof(sin);
 #endif /* HAVE_STRUCT_SOCKADDR_SA_LEN */
 	memcpy(&sin.sin_addr, &bs->key.local, sizeof(sin.sin_addr));
-	if (CHECK_FLAG(bs->flags, BFD_SESS_FLAG_MH) == 0)
-		sin.sin_addr.s_addr = INADDR_ANY;
 
 	pcount = 0;
 	do {
@@ -1876,6 +1874,7 @@ int _ptm_sbfd_init_send(struct bfd_session *bfd, const void *data, size_t datale
 	local = bfd->key.local;
 	peer  = bfd->key.peer;
 
+    /*SBFD Control pkt dst port should be 7784, src port can be any but NOT 7784 according to RFC7781 */
     if (bp_raw_sbfd_red_send(sd, (uint8_t *)data, datalen, bfd->key.family, &bfd->out_sip6, &local, &peer, 
 	   BFD_DEFDESTPORT, BFD_DEF_SBFD_DEST_PORT, seg_num, segment_list) < 0)
 	{
@@ -1921,6 +1920,7 @@ int _ptm_sbfd_echo_send(struct bfd_session *bfd, const void *data, size_t datale
 
     local = bfd->key.local;
 	peer  = bfd->key.peer;
+	/*SBFD echo pkt dst port should use BFD Echo port 3785, src port can be any according to RFC7781*/
     if (bp_raw_sbfd_red_send(sd, (uint8_t *)data, datalen, bfd->key.family, &bfd->out_sip6, &local , &peer, 
 	   BFD_DEF_ECHO_PORT, BFD_DEF_ECHO_PORT, seg_num, segment_list) < 0)
 	{
@@ -2034,12 +2034,24 @@ static int ptm_bfd_reflector_process_init_packet(struct bfd_vrf_global *bvrf, in
 		return 0;
 	}
 	cp = (struct bfd_pkt *)(msgbuf);
+	if(!CHECK_FLAG(cp->flags, BFD_DEMANDBIT)){
+		/*Control Packet from SBFDInitiator should have Demand bit set to 1 according to RFC7880*/
+		return 0;
+	}
+
 	sr = sbfd_discr_lookup(ntohl(cp->discrs.remote_discr));
 	if(sr)
 	{
 		uint32_t temp = cp->discrs.my_discr;
 		cp->discrs.my_discr = cp->discrs.remote_discr;
 		cp->discrs.remote_discr = temp;
+		UNSET_FLAG(cp->flags, BFD_DEMANDBIT);
+		BFD_SETSTATE(cp->flags, PTM_BFD_UP);
+		if(CHECK_FLAG(cp->flags, BFD_PBIT))
+		{
+			UNSET_FLAG(cp->flags, BFD_PBIT);
+			SET_FLAG(cp->flags, BFD_FBIT);
+		}
 
 		sa = (struct sockaddr *)&peer.sa_sin6;
 

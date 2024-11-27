@@ -384,7 +384,7 @@ static int bfd_session_destroy(enum nb_event event,
 		    zlog_info("bfd_session_destroy: %s", bs_to_string(bs));
 
 		if (bfd_mode == BFD_MODE_TYPE_SBFD_ECHO || bfd_mode == BFD_MODE_TYPE_SBFD_INIT){
-			ptm_bfd_notify(bs, PTM_BFD_DEL);
+			ptm_bfd_notify(bs, PTM_BFD_DOWN);
 		}
 
 		bfd_session_free(bs);

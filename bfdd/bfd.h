@@ -434,7 +434,6 @@ struct sbfd_reflector{
 #define PTM_BFD_DOWN 1
 #define PTM_BFD_INIT 2
 #define PTM_BFD_UP 3
-#define PTM_BFD_DEL 4
 
 
 /* Various constants */

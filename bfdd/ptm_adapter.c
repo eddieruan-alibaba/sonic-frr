@@ -254,9 +254,6 @@ int ptm_bfd_notify(struct bfd_session *bs, uint8_t notify_state)
             stream_putl(msg, BFD_STATUS_DOWN);
 		}
 		break;
-	case PTM_BFD_DEL:
-		stream_putl(msg, BFD_STATUS_DEL);
-		break;
 	default:
 		stream_putl(msg, BFD_STATUS_UNKNOWN);
 		break;
