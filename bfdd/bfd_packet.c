@@ -1994,12 +1994,24 @@ static int ptm_bfd_reflector_process_init_packet(struct bfd_vrf_global *bvrf, in
 		return 0;
 	}
 	cp = (struct bfd_pkt *)(msgbuf);
+	if(!CHECK_FLAG(cp->flags, BFD_DEMANDBIT)){
+		/*Control Packet from SBFDInitiator should have Demand bit set to 1 according to RFC7880*/
+		return 0;
+	}
+
 	sr = sbfd_discr_lookup(ntohl(cp->discrs.remote_discr));
 	if(sr)
 	{
 		uint32_t temp = cp->discrs.my_discr;
 		cp->discrs.my_discr = cp->discrs.remote_discr;
 		cp->discrs.remote_discr = temp;
+		UNSET_FLAG(cp->flags, BFD_DEMANDBIT);
+		BFD_SETSTATE(cp->flags, PTM_BFD_UP);
+		if(CHECK_FLAG(cp->flags, BFD_PBIT))
+		{
+			UNSET_FLAG(cp->flags, BFD_PBIT);
+			SET_FLAG(cp->flags, BFD_FBIT);
+		}
 
 		sa = (struct sockaddr *)&peer.sa_sin6;
 
