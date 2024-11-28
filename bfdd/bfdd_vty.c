@@ -91,9 +91,10 @@ static void _display_peer_header(struct vty *vty, struct bfd_session *bs)
 	vty_out(vty, "\tpeer %s",
 		inet_ntop(bs->key.family, &bs->key.peer, addr_buf,
 			  sizeof(addr_buf)));
-
-	if (CHECK_FLAG(bs->flags, BFD_SESS_FLAG_MH))
-		vty_out(vty, " multihop");
+	if (bs->bfd_mode == BFD_MODE_TYPE_BFD){
+		if (CHECK_FLAG(bs->flags, BFD_SESS_FLAG_MH))
+			vty_out(vty, " multihop");
+	}
 
 	if (bs->bfd_mode == BFD_MODE_TYPE_SBFD_ECHO || bs->bfd_mode == BFD_MODE_TYPE_SBFD_INIT)
 		vty_out(vty, " bfd-mode %s", bfd_mode_type_to_string(bs->bfd_mode));

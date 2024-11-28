@@ -301,8 +301,9 @@ static int 	bfd_session_create(struct nb_cb_create_args *args, bool mhop, uint32
 			/* Set configuration flags. */
 			bs->refcount = 1;
 			SET_FLAG(bs->flags, BFD_SESS_FLAG_CONFIG);
-			// if (mhop)
-			// 	SET_FLAG(bs->flags, BFD_SESS_FLAG_MH);
+			if (mhop)
+				SET_FLAG(bs->flags, BFD_SESS_FLAG_MH);
+
 			if (bs->key.family == AF_INET6)
 				SET_FLAG(bs->flags, BFD_SESS_FLAG_IPV6);
 			
@@ -1237,7 +1238,7 @@ int bfdd_bfd_sessions_srte_sbfd_source_ipv6_destroy(
  */
 int bfdd_bfd_sessions_srte_sbfd_init_create(struct nb_cb_create_args *args)
 {
-	return bfd_session_create(args, false, BFD_MODE_TYPE_SBFD_INIT);
+	return bfd_session_create(args, true, BFD_MODE_TYPE_SBFD_INIT);
 }
 
 int bfdd_bfd_sessions_srte_sbfd_init_destroy(struct nb_cb_destroy_args *args)

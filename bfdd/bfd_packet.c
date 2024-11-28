@@ -1876,7 +1876,7 @@ int _ptm_sbfd_init_send(struct bfd_session *bfd, const void *data, size_t datale
 
     /*SBFD Control pkt dst port should be 7784, src port can be any but NOT 7784 according to RFC7781 */
     if (bp_raw_sbfd_red_send(sd, (uint8_t *)data, datalen, bfd->key.family, &bfd->out_sip6, &local, &peer, 
-	   BFD_DEFDESTPORT, BFD_DEF_SBFD_DEST_PORT, seg_num, segment_list) < 0)
+	   BFD_DEF_MHOP_DEST_PORT, BFD_DEF_SBFD_DEST_PORT, seg_num, segment_list) < 0)
 	{
 		if(bfd->stats.tx_fail_pkt <= 1){
 			char dst[INET6_ADDRSTRLEN] = {0};
