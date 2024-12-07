@@ -621,15 +621,19 @@ void nhg_del(uint32_t id)
 void sharp_zebra_nexthop_watch(struct prefix *p, vrf_id_t vrf_id, bool import,
 			       bool watch, bool connected)
 {
-	int command;
 
-	command = ZEBRA_NEXTHOP_REGISTER;
+	int command = ZEBRA_NEXTHOP_REGISTER;
+	uint8_t flags = 0;
+
 
 	if (!watch)
 		command = ZEBRA_NEXTHOP_UNREGISTER;
 
-	if (zclient_send_rnh(zclient, command, p, SAFI_UNICAST, connected,
-			     false, vrf_id) == ZCLIENT_SEND_FAILURE)
+	if (connected)
+		SET_FLAG(flags, NEXTHOP_REGISTER_FLAG_CONNECTED);
+
+	if (zclient_send_rnh(zclient, command, p, SAFI_UNICAST, flags, vrf_id, 0) ==
+	    ZCLIENT_SEND_FAILURE)
 		zlog_warn("%s: Failure to send nexthop to zebra", __func__);
 }
 

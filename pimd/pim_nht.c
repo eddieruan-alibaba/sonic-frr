@@ -43,10 +43,14 @@ void pim_sendmsg_zebra_rnh(struct pim_instance *pim, struct zclient *zclient,
 {
 	struct prefix p;
 	int ret;
+	uint8_t flags = 0;
+
 
 	pim_addr_to_prefix(&p, pnc->rpf.rpf_addr);
-	ret = zclient_send_rnh(zclient, command, &p, SAFI_UNICAST, false, false,
-			       pim->vrf->vrf_id);
+
+	/* Register to track nexthops from the MRIB */
+	ret = zclient_send_rnh(zclient, command, &p, SAFI_UNICAST, flags,
+			       pim->vrf->vrf_id, 0);
 	if (ret == ZCLIENT_SEND_FAILURE)
 		zlog_warn("sendmsg_nexthop: zclient_send_message() failed");
 
@@ -56,6 +60,10 @@ void pim_sendmsg_zebra_rnh(struct pim_instance *pim, struct zclient *zclient,
 			__func__,
 			(command == ZEBRA_NEXTHOP_REGISTER) ? " " : "de", &p,
 			pim->vrf->name, ret);
+
+		zlog_debug("%s: MRIB NHT %sregistered addr %pFX(%s) with Zebra ret:%d ", __func__,
+			   (command == ZEBRA_NEXTHOP_REGISTER) ? " " : "de", &p, pim->vrf->name,
+			   ret);
 
 	return;
 }
