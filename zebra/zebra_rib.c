@@ -4153,7 +4153,6 @@ static void _route_entry_dump_nh(const struct route_entry *re,
 	wgt_str[0] = '\0';
 	if (nexthop->weight)
 		snprintf(wgt_str, sizeof(wgt_str), "wgt %d,", nexthop->weight);
-
 	zlog_debug("%s: %s %s[%u] %svrf %s(%u) %s%s with flags %s%s%s%s%s%s%s%s%s",
 		   straddr, (nexthop->rparent ? "  NH" : "NH"), nhname,
 		   nexthop->ifindex, label_str, vrf ? vrf->name : "Unknown",

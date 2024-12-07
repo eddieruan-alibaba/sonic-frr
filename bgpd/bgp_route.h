@@ -281,11 +281,17 @@ struct bgp_path_info {
 	/* For nexthop linked list */
 	LIST_ENTRY(bgp_path_info) nh_thread;
 
+	/* For te policy nexthop linked list */
+	LIST_ENTRY(bgp_path_info) te_nh_thread;
+
 	/* Back pointer to the prefix node */
 	struct bgp_dest *net;
 
 	/* Back pointer to the nexthop structure */
 	struct bgp_nexthop_cache *nexthop;
+
+	/* Back pointer to the te policy nexthop structure */
+	struct bgp_nexthop_cache *te_nexthop;
 
 	/* Peer structure.  */
 	struct peer *peer;
@@ -327,6 +333,20 @@ struct bgp_path_info {
 #define BGP_PATH_ACCEPT_OWN (1 << 16)
 #define BGP_PATH_MPLSVPN_LABEL_NH (1 << 17)
 #define BGP_PATH_MPLSVPN_NH_LABEL_BIND (1 << 18)
+
+#define BGP_PATH_UNSORTED (1 << 19)
+/*
+ * BGP_PATH_MULTIPATH_NEW is set on those bgp_path_info
+ * nodes that we have decided should possibly be in the
+ * ecmp path for a particular dest.  This flag is
+ * removed when the bgp_path_info's are looked at to
+ * decide on whether or not a bgp_path_info is on
+ * the actual ecmp path.
+ */
+#define BGP_PATH_MULTIPATH_NEW (1 << 20)
+#define BGP_PATH_SRV6_TE       (1 << 21)
+#define BGP_PATH_SRV6_TE_VALID (1 << 22)
+
 
 	/* BGP route type.  This can be static, RIP, OSPF, BGP etc.  */
 	uint8_t type;

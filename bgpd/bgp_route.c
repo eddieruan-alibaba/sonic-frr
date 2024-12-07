@@ -114,6 +114,49 @@ static const struct message bgp_pmsi_tnltype_str[] = {
 #define VRFID_NONE_STR "-"
 #define SOFT_RECONFIG_TASK_MAX_PREFIX 25000
 
+
+static inline char *bgp_route_dump_path_info_flags(struct bgp_path_info *pi,
+						   char *buf, size_t len)
+{
+	uint32_t flags = pi->flags;
+
+	if (flags == 0) {
+		snprintfrr(buf, len, "None ");
+		return buf;
+	}
+
+	snprintfrr(buf, len, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+		   CHECK_FLAG(flags, BGP_PATH_IGP_CHANGED) ? "IGP Changed " : "",
+		   CHECK_FLAG(flags, BGP_PATH_DAMPED) ? "Damped" : "",
+		   CHECK_FLAG(flags, BGP_PATH_HISTORY) ? "History " : "",
+		   CHECK_FLAG(flags, BGP_PATH_SELECTED) ? "Selected " : "",
+		   CHECK_FLAG(flags, BGP_PATH_VALID) ? "Valid " : "",
+		   CHECK_FLAG(flags, BGP_PATH_ATTR_CHANGED) ? "Attr Changed "
+							    : "",
+		   CHECK_FLAG(flags, BGP_PATH_DMED_CHECK) ? "Dmed Check " : "",
+		   CHECK_FLAG(flags, BGP_PATH_DMED_SELECTED) ? "Dmed Selected "
+							     : "",
+		   CHECK_FLAG(flags, BGP_PATH_STALE) ? "Stale " : "",
+		   CHECK_FLAG(flags, BGP_PATH_REMOVED) ? "Removed " : "",
+		   CHECK_FLAG(flags, BGP_PATH_COUNTED) ? "Counted " : "",
+		   CHECK_FLAG(flags, BGP_PATH_MULTIPATH) ? "Mpath " : "",
+		   CHECK_FLAG(flags, BGP_PATH_MULTIPATH_CHG) ? "Mpath Chg " : "",
+		   CHECK_FLAG(flags, BGP_PATH_RIB_ATTR_CHG) ? "Rib Chg " : "",
+		   CHECK_FLAG(flags, BGP_PATH_ANNC_NH_SELF) ? "NH Self " : "",
+		   CHECK_FLAG(flags, BGP_PATH_LINK_BW_CHG) ? "LinkBW Chg " : "",
+		   CHECK_FLAG(flags, BGP_PATH_ACCEPT_OWN) ? "Accept Own " : "",
+		   CHECK_FLAG(flags, BGP_PATH_MPLSVPN_LABEL_NH) ? "MPLS Label "
+								: "",
+		   CHECK_FLAG(flags, BGP_PATH_MPLSVPN_NH_LABEL_BIND)
+			   ? "MPLS Label Bind "
+			   : "",
+		   CHECK_FLAG(flags, BGP_PATH_UNSORTED) ? "Unsorted " : "",
+		   CHECK_FLAG(flags, BGP_PATH_SRV6_TE_VALID) ? "SRv6 TE " : "");
+
+	return buf;
+}
+
+
 DEFINE_HOOK(bgp_process,
 	    (struct bgp * bgp, afi_t afi, safi_t safi, struct bgp_dest *bn,
 	     struct peer *peer, bool withdraw),
@@ -293,6 +336,7 @@ void bgp_path_info_free_with_caller(const char *name,
 	bgp_attr_unintern(&path->attr);
 
 	bgp_unlink_nexthop(path);
+	bgp_unlink_te_nexthop(path);
 	bgp_path_info_extra_free(&path->extra);
 	bgp_path_info_mpath_free(&path->mpath);
 	if (path->net)
@@ -473,6 +517,7 @@ void bgp_path_info_delete(struct bgp_dest *dest, struct bgp_path_info *pi)
 	bgp_path_info_set_flag(dest, pi, BGP_PATH_REMOVED);
 	/* set of previous already took care of pcount */
 	UNSET_FLAG(pi->flags, BGP_PATH_VALID);
+	UNSET_FLAG(pi->flags, BGP_PATH_SRV6_TE_VALID);
 }
 
 /* undo the effects of a previous call to bgp_path_info_delete; typically
@@ -5058,6 +5103,7 @@ void bgp_update(struct peer *peer, const struct prefix *p, uint32_t addpath_id,
 filtered:
 	if (new) {
 		bgp_unlink_nexthop(new);
+		bgp_unlink_te_nexthop(new);
 		bgp_path_info_delete(dest, new);
 		bgp_path_info_extra_free(&new->extra);
 		XFREE(MTYPE_BGP_ROUTE, new);
@@ -6314,10 +6360,11 @@ static void bgp_nexthop_reachability_check(afi_t afi, safi_t safi,
 	if (safi == SAFI_UNICAST || safi == SAFI_LABELED_UNICAST) {
 		if (CHECK_FLAG(bgp->flags, BGP_FLAG_IMPORT_CHECK)) {
 			if (bgp_find_or_add_nexthop(bgp, bgp_nexthop, afi, safi,
-						    bpi, NULL, 0, p))
-				bgp_path_info_set_flag(dest, bpi,
-						       BGP_PATH_VALID);
-			else {
+						    bpi, NULL, 0, p)) {
+				bgp_path_info_set_flag(dest, bpi, BGP_PATH_VALID);
+				if (CHECK_FLAG(bpi->flags, BGP_PATH_SRV6_TE))
+					SET_FLAG(bpi->flags, BGP_PATH_SRV6_TE_VALID);
+			} else {
 				if (BGP_DEBUG(nht, NHT)) {
 					char buf1[INET6_ADDRSTRLEN];
 
@@ -6328,6 +6375,7 @@ static void bgp_nexthop_reachability_check(afi_t afi, safi_t safi,
 				}
 				bgp_path_info_unset_flag(dest, bpi,
 							 BGP_PATH_VALID);
+				UNSET_FLAG(bpi->flags, BGP_PATH_SRV6_TE_VALID);
 			}
 		} else {
 			/* Delete the NHT structure if any, if we're toggling between
@@ -6335,8 +6383,10 @@ static void bgp_nexthop_reachability_check(afi_t afi, safi_t safi,
 			* from NHT to avoid overloading NHT and the process interaction
 			*/
 			bgp_unlink_nexthop(bpi);
-
+			bgp_unlink_te_nexthop(bpi);
 			bgp_path_info_set_flag(dest, bpi, BGP_PATH_VALID);
+			if (CHECK_FLAG(bpi->flags, BGP_PATH_SRV6_TE))
+				SET_FLAG(bpi->flags, BGP_PATH_SRV6_TE_VALID);
 		}
 	}
 }
@@ -6649,6 +6699,7 @@ void bgp_static_withdraw(struct bgp *bgp, const struct prefix *p, afi_t afi,
 		}
 		bgp_aggregate_decrement(bgp, p, pi, afi, safi);
 		bgp_unlink_nexthop(pi);
+		bgp_unlink_te_nexthop(pi);
 		bgp_path_info_delete(dest, pi);
 		bgp_process(bgp, dest, afi, safi);
 	}
@@ -7054,6 +7105,7 @@ static void bgp_purge_af_static_redist_routes(struct bgp *bgp, afi_t afi,
 					bgp, bgp_dest_get_prefix(dest), pi, afi,
 					safi);
 				bgp_unlink_nexthop(pi);
+				bgp_unlink_te_nexthop(pi);
 				bgp_path_info_delete(dest, pi);
 				bgp_process(bgp, dest, afi, safi);
 			}
@@ -10838,6 +10890,67 @@ void route_vty_out_detail(struct vty *vty, struct bgp *bgp, struct bgp_dest *bn,
 	if (!json_paths)
 		vty_out(vty, "\n");
 
+	if (path->nexthop) {
+		struct nexthop *nexthop;
+		struct bgp_nexthop_cache *bnc = path->nexthop;
+
+		if (!json_paths) {
+			vty_out(vty, "      Relay-Nexthop(ip):");
+			for (nexthop = bnc->nexthop; nexthop; nexthop = nexthop->next) {
+				switch (nexthop->type) {
+				case NEXTHOP_TYPE_IPV6:
+					vty_out(vty, " gate %s, ",
+						inet_ntop(AF_INET6, &nexthop->gate.ipv6, buf,
+							  sizeof(buf)));
+					break;
+				case NEXTHOP_TYPE_IPV6_IFINDEX:
+					vty_out(vty, " gate %s, if %s, ",
+						inet_ntop(AF_INET6, &nexthop->gate.ipv6, buf,
+							  sizeof(buf)),
+						ifindex2ifname(bnc->ifindex_ipv6_ll ? bnc->ifindex_ipv6_ll
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_IPV4:
+					vty_out(vty, " gate %s, ",
+						inet_ntop(AF_INET, &nexthop->gate.ipv4, buf,
+							  sizeof(buf)));
+					break;
+				case NEXTHOP_TYPE_IFINDEX:
+					vty_out(vty, " if %s, ",
+						ifindex2ifname(bnc->ifindex_ipv6_ll ? bnc->ifindex_ipv6_ll
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_IPV4_IFINDEX:
+					vty_out(vty, " gate %s, if %s, ",
+						inet_ntop(AF_INET, &nexthop->gate.ipv4, buf,
+							  sizeof(buf)),
+						ifindex2ifname(bnc->ifindex_ipv6_ll ? bnc->ifindex_ipv6_ll
+										: nexthop->ifindex,
+								   bgp->vrf_id));
+					break;
+				case NEXTHOP_TYPE_BLACKHOLE:
+					vty_out(vty, " blackhole, ");
+					break;
+				default:
+					vty_out(vty, " invalid nexthop type %u\n",
+						nexthop->type);
+				}
+			}
+
+			vty_out(vty, "\n");
+			if (path->te_nexthop) {
+				bnc = path->te_nexthop;
+				vty_out(vty, "      Relay-Nexthop(tunnel):");
+				if (CHECK_FLAG(bnc->flags, BGP_NEXTHOP_SRV6TE_VALID))
+					vty_out(vty, " srv6-tunnel:%s|%u(endpoint|color), ",
+							inet_ntop(bnc->prefix.family, &bnc->prefix.u.prefix, buf, sizeof(buf)),
+							bnc->srte_color);
+				vty_out(vty, "\n");
+			}
+		}
+	}
 	/* Line 4 display Community */
 	if (attr->flag & ATTR_FLAG_BIT(BGP_ATTR_COMMUNITIES)) {
 		if (json_paths) {
