@@ -398,7 +398,8 @@ int bfd_session_enable(struct bfd_session *bs)
 			/*enable receive echo response*/
 			bfd_set_echo(bs, true);
 
-			bfd_echo_recvtimer_update(bs);
+			bs->echo_detect_TO = (bs->remote_detect_mult * bs->echo_xmt_TO);
+			sbfd_echo_recvtimer_update(bs);
 			ptm_bfd_start_xmt_timer(bs, true);
 		}
 		else
@@ -2156,7 +2157,7 @@ static int _bfd_session_next(struct hash_bucket *hb, void *arg)
 	/* Previous entry signaled stop. */
 	if (bsi->bsi_stop == 1) {
 		/* Match the single/multi hop sessions. */
-		if ((bs->key.mhop != bsi->bsi_mhop) && (bs->bfd_mode != bsi->bsi_bfdmode))
+		if ((bs->key.mhop != bsi->bsi_mhop) || (bs->bfd_mode != bsi->bsi_bfdmode))
 			return HASHWALK_CONTINUE;
 
 		bsi->bsi_bs = bs;
@@ -2391,7 +2392,7 @@ static int bfd_vrf_enable(struct vrf *vrf)
 		bvrf->bg_shop6 = bp_udp6_shop(vrf);
 	if (bvrf->bg_mhop6 == -1)
 		bvrf->bg_mhop6 = bp_udp6_mhop(vrf);
-	if (!bvrf->bg_initv6)
+	if (bvrf->bg_initv6 == -1)
 		bvrf->bg_initv6 = bp_initv6_socket(vrf);
 
 	if (bvrf->bg_ev[0] == NULL && bvrf->bg_shop != -1)
@@ -2406,7 +2407,7 @@ static int bfd_vrf_enable(struct vrf *vrf)
 	if (bvrf->bg_ev[3] == NULL && bvrf->bg_mhop6 != -1)
 		event_add_read(master, bfd_recv_cb, bvrf, bvrf->bg_mhop6,
 			       &bvrf->bg_ev[3]);
-	if (!bvrf->bg_ev[6] && bvrf->bg_initv6 != -1)
+	if (bvrf->bg_ev[6] == NULL && bvrf->bg_initv6 != -1)
 		event_add_read(master, bfd_recv_cb, bvrf, bvrf->bg_initv6,
 				&bvrf->bg_ev[6]);
 

@@ -271,7 +271,7 @@ DEFPY_YANG_NOSH(
 {
 	int ret, slen;
 	char value[32];
-	char xpath[XPATH_MAXLEN], xpath_sl[XPATH_MAXLEN + 32],xpath_bfdmode[XPATH_MAXLEN + 32];
+	char xpath[XPATH_MAXLEN], xpath_sl[XPATH_MAXLEN + 32];
 	
 	if (!bfdname) {
 		vty_out(vty,"%% ERROR: bfd name is required\n");
@@ -312,10 +312,6 @@ DEFPY_YANG_NOSH(
 
 	snprintf(xpath_sl, sizeof(xpath_sl), "%s/dest-addr", xpath);
 	nb_cli_enqueue_change(vty, xpath_sl, NB_OP_MODIFY, peer_str);
-
-	snprintf(xpath_bfdmode, sizeof(xpath_bfdmode), "%s/bfd-mode", xpath);
-	snprintf(value, sizeof(value), "%d", BFD_MODE_TYPE_SBFD_ECHO);
-	nb_cli_enqueue_change(vty, xpath_bfdmode, NB_OP_MODIFY, value);
 
 	/* Apply settings immediately. */
 	ret = nb_cli_apply_changes(vty, NULL);
@@ -399,7 +395,7 @@ DEFPY_YANG_NOSH(
 {
 	int ret, slen, peer_ver, local_ver;
 	char value[32];
-	char xpath[XPATH_MAXLEN], xpath_sl[XPATH_MAXLEN + 32],xpath_bfdmode[XPATH_MAXLEN + 32],xpath_rd[XPATH_MAXLEN + 32];
+	char xpath[XPATH_MAXLEN], xpath_sl[XPATH_MAXLEN + 32],xpath_rd[XPATH_MAXLEN + 32];
 	
 	if (!bfdname) {
 		vty_out(vty,"%% ERROR: bfd name is required\n");
@@ -448,10 +444,6 @@ DEFPY_YANG_NOSH(
 		snprintf(xpath_sl, sizeof(xpath_sl), "%s/source-ipv6", xpath);
 	    nb_cli_enqueue_change(vty, xpath_sl, NB_OP_MODIFY, source_ipv6_str);
 	}
-
-	snprintf(xpath_bfdmode, sizeof(xpath_bfdmode), "%s/bfd-mode", xpath);
-	snprintf(value, sizeof(value), "%d", BFD_MODE_TYPE_SBFD_INIT);
-	nb_cli_enqueue_change(vty, xpath_bfdmode, NB_OP_MODIFY, value);
 
 	snprintf(xpath_rd, sizeof(xpath_rd), "%s/remote-discr", xpath);
 	nb_cli_enqueue_change(vty, xpath_rd, NB_OP_MODIFY, discr_str);
@@ -554,11 +546,10 @@ static void _bfd_cli_show_peer(struct vty *vty, const struct lyd_node *dnode,
 	}
 	else if (bfd_mode == BFD_MODE_TYPE_SBFD_ECHO || bfd_mode == BFD_MODE_TYPE_SBFD_INIT)
 	{
+	    vty_out(vty, " bfd-mode %s", _bfd_cli_bfd_mode_type_to_string(bfd_mode));
+
 		if (yang_dnode_exists(dnode, "bfd-name"))
 	    	vty_out(vty, " bfd-name %s", yang_dnode_get_string(dnode, "bfd-name"));
-
-		if (yang_dnode_exists(dnode, "bfd-mode"))
-	    	vty_out(vty, " bfd-mode %s", _bfd_cli_bfd_mode_type_to_string(yang_dnode_get_uint32(dnode, "bfd-mode")));
 
 		if (yang_dnode_exists(dnode, "source-addr"))
 			vty_out(vty, " local-address %s",

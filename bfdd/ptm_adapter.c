@@ -558,7 +558,6 @@ static void bfdd_dest_deregister(struct stream *msg, vrf_id_t vrf_id)
 			return;
 		}
 
-		SET_FLAG(bs->flags, BFD_SESS_FLAG_SHUTDOWN);
 	}
 
 	/* Unregister client peer notification. */
