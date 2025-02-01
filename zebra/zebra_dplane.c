@@ -3133,42 +3133,44 @@ static void dplane_ctx_nexthop_fill_routeinfo(struct zebra_dplane_ctx *ctx, stru
 {
 	uint8_t i = 0;
 	struct nexthop *nh = NULL;
+	uint32_t flags = 0;
 	struct nhg_hash_entry *depend = NULL;
 	struct nhg_connected *rb_node_dep = NULL;
 
 	nh = nhe->nhg.nexthop;
 	if (nh->nh_srv6 || CHECK_FLAG(nh->flags, NEXTHOP_FLAG_SRV6_TUNNEL))
-		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NON_RECURSIVE))
-		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 	{
-		dplane_ctx_set_flags(ctx, ZEBRA_FLAG_KERNEL_BYPASS);
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
 		if (!zebra_nhg_segdepends_is_empty(nhe))
 			ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_seg_nhe2grp(
 				ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
 	} else {
-	/* If this is a group, convert it to a grp array of ids */
-	if (!zebra_nhg_depends_is_empty(nhe)
-		&& !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)
-		&& !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NON_RECURSIVE))
-		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
-			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+		/* If this is a group, convert it to a grp array of ids */
+		if (!zebra_nhg_depends_is_empty(nhe)
+			&& !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)
+			&& !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NON_RECURSIVE))
+			ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
+				ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
 
-	if ((nh->nh_srv6 || CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NON_RECURSIVE)) && zebra_nhg_depends_count(nhe) > 1) {
-		frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-			if (!CHECK_FLAG(rb_node_dep->nhe->flags, NEXTHOP_GROUP_VALID))
-				continue;
-			depend = rb_node_dep->nhe;
-			ctx->u.rinfo.nhe.nh_grp[i].id = depend->id;
-			ctx->u.rinfo.nhe.nh_grp[i].weight = depend->nhg.nexthop->weight;
-			i++;
+		if ((nh->nh_srv6 || CHECK_FLAG(nhe->flags,NEXTHOP_GROUP_PIC_NON_RECURSIVE)) && zebra_nhg_depends_count(nhe) > 1) {
+			frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+				if (!CHECK_FLAG(rb_node_dep->nhe->flags, NEXTHOP_GROUP_VALID))
+					continue;
+				depend = rb_node_dep->nhe;
+				ctx->u.rinfo.nhe.nh_grp[i].id = depend->id;
+				ctx->u.rinfo.nhe.nh_grp[i].weight = depend->nhg.nexthop->weight;
+				i++;
+			}
+			ctx->u.rinfo.nhe.nh_grp_count = i;
 		}
-		ctx->u.rinfo.nhe.nh_grp_count = i;
 	}
-	}
+	dplane_ctx_set_flags(ctx, flags);
 }
 /**
  * dplane_ctx_nexthop_init() - Initialize a context block for a nexthop update

@@ -378,7 +378,7 @@ static void route_entry_attach_ref(struct route_entry *re,
 	if (CHECK_FLAG(new->flags, NEXTHOP_GROUP_SEGMENTLIST))
 		zebra_nhg_seg_increment_ref(new);
 	else
-	zebra_nhg_increment_ref(new);
+		zebra_nhg_increment_ref(new);
 }
 
 /* Replace (if 'new_nhghe') or clear (if that's NULL) an re's nhe. */
@@ -413,7 +413,7 @@ done:
 		if (CHECK_FLAG(old_nhg->flags, NEXTHOP_GROUP_SEGMENTLIST))
 			zebra_nhg_seg_decrement_ref(old_nhg);
 		else
-		zebra_nhg_decrement_ref(old_nhg);
+			zebra_nhg_decrement_ref(old_nhg);
 	}
 
 	return ret;
@@ -703,7 +703,7 @@ void rib_install_kernel(struct route_node *rn, struct route_entry *re,
 	if (CHECK_FLAG(re->nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 		zebra_nhg_seg_install_kernel(re->nhe);
 	else
-	zebra_nhg_install_kernel(re->nhe);
+		zebra_nhg_install_kernel(re->nhe);
 
 	/*
 	 * If this is a replace to a new RE let the originator of the RE

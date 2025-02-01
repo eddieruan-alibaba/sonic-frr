@@ -2192,7 +2192,7 @@ zebra_nhg_rib_find_nhe(struct nhg_hash_entry *rt_nhe, afi_t rt_afi)
 	if (rt_nhe && CHECK_FLAG(rt_nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 		zebra_nhe_seg_find(&nhe, rt_nhe, NULL, rt_afi, false, false);
 	else
-	zebra_nhe_find(&nhe, rt_nhe, NULL, rt_afi, false, false);
+		zebra_nhe_find(&nhe, rt_nhe, NULL, rt_afi, false, false);
 
 	if (IS_ZEBRA_DEBUG_NHG_DETAIL)
 		zlog_debug("%s: => nhe %p (%pNG)", __func__, nhe, nhe);
@@ -3686,7 +3686,7 @@ backups_done:
 		if (CHECK_FLAG(curr_nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 			zebra_nhg_seg_set_valid_if_active(re->nhe);
 		else
-		zebra_nhg_set_valid_if_active(re->nhe);
+			zebra_nhg_set_valid_if_active(re->nhe);
 	}
 
 	/*
@@ -3697,7 +3697,7 @@ backups_done:
 	if (CHECK_FLAG(curr_nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 		zebra_nhg_seg_free(curr_nhe);
 	else
-	zebra_nhg_free(curr_nhe);
+		zebra_nhg_free(curr_nhe);
 	return curr_active;
 }
 
@@ -4104,7 +4104,7 @@ void zebra_nhg_dplane_result(struct zebra_dplane_ctx *ctx)
 			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_SEGMENTLIST))
 				zebra_nhg_seg_handle_install(nhe);
 			else
-			zebra_nhg_handle_install(nhe);
+				zebra_nhg_handle_install(nhe);
 
 			/* If daemon nhg, send it an update */
 			if (PROTO_OWNED(nhe))

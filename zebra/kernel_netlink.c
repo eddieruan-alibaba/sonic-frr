@@ -436,6 +436,7 @@ static int netlink_information_fetch(struct nlmsghdr *h, ns_id_t ns_id,
 	/* Messages handled in the dplane thread */
 	case RTM_NEWADDR:
 	case RTM_DELADDR:
+	return netlink_interface_addr(h, ns_id, startup);
 	case RTM_NEWNETCONF:
 	case RTM_DELNETCONF:
 	case RTM_NEWTUNNEL:
