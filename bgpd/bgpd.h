@@ -863,6 +863,7 @@ struct bgp {
 	uint32_t tovpn_sid_index; /* unset => set to 0 */
 	struct in6_addr *tovpn_sid;
 	struct srv6_locator *tovpn_sid_locator;
+	struct srv6_locator *tovpn_sid_locator_explicit;
 	uint32_t tovpn_sid_transpose_label;
 	struct in6_addr *tovpn_zebra_vrf_sid_last_sent;
 
@@ -2862,6 +2863,7 @@ extern int bgp_lookup_by_as_name_type(struct bgp **bgp_val, as_t *as,
 				      enum asnotation_mode asnotation,
 				      const char *name,
 				      enum bgp_instance_type inst_type);
+extern struct srv6_sid *static_sid_lookup_by_vrf(const char *vrfname, afi_t afi);
 
 /* Hooks */
 DECLARE_HOOK(bgp_vrf_status_changed, (struct bgp *bgp, struct interface *ifp),
