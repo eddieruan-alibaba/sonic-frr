@@ -2398,6 +2398,8 @@ ssize_t netlink_route_multipath_msg_encode(int cmd, struct zebra_dplane_ctx *ctx
 			}
 		}
 
+		zlog_debug("%s: %pFX , nhg_id is %u,  msg size %u", __func__, p,
+				   dplane_ctx_get_nhe_id(ctx), NLMSG_ALIGN(req->n.nlmsg_len));
 		return NLMSG_ALIGN(req->n.nlmsg_len);
 	}
 
