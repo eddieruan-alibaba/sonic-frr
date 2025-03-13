@@ -1480,15 +1480,16 @@ static void bgp_zebra_announce_parse_nexthop(
 					if (!sid_zero_ipv6(&mpinfo->attr->srv6_l3vpn->sid)) {
 						memcpy(&api_nh->seg6_segs[0], &mpinfo->attr->srv6_l3vpn->sid,
 							sizeof(api_nh->seg6_segs[0]));
-						
+
 						if (mpinfo->attr->srv6_l3vpn->transposition_len != 0) {
 							if (!bgp_is_valid_label(&mpinfo->extra->labels->label[0]))
 								continue;
 						}
 					}
 					SET_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SEG6);
-					UNSET_FLAG(api->flags, ZEBRA_FLAG_ALLOW_RECURSION);
-					*allow_recursion = false;
+					SET_FLAG(api->flags, ZEBRA_FLAG_ALLOW_RECURSION);
+					*allow_recursion = true;
+					zlog_debug("%s: p=%pFX, set allow recursion", __func__, p);
 				}
 
 				api_nh->seg_num = 1;
@@ -3485,7 +3486,7 @@ static int bgp_zebra_process_srv6_locator_chunk(ZAPI_CALLBACK_ARGS)
 
 /**
  * Internal function to process an SRv6 locator and static SIDs list
- * 
+ *
  * @param locator The locator to be processed
  * @param static_sids_list The static SIDs list to be processed
  */
@@ -3495,7 +3496,7 @@ static int bgp_zebra_process_srv6_locator_static_sids_internal(struct srv6_locat
 	struct bgp *bgp = bgp_get_default();
 	struct listnode *sid_node, *sid_nnode = NULL;
 	struct srv6_sid *static_sid = NULL;
-	
+
 	if (!bgp || !bgp->srv6_enabled || !locator)
 		return -1;
 
@@ -4685,7 +4686,7 @@ void bgp_zebra_release_srv6_sid(const struct srv6_sid_ctx *ctx)
 
 /**
  * Ask the SRv6 Manager (zebra) about a specific locator and all static SIDs
- * 
+ *
  * @param name Locator name
  * @return 0 on success, -1 otherwise
  */
@@ -4693,7 +4694,7 @@ int bgp_zebra_srv6_manager_get_locator_static_sids(const char *name)
 {
 	if(!name)
 		return -1;
-	
+
 	/**
 	 * Send the Get Locator and static SIDs request to the SRv6 Manager
 	 * and return the result
