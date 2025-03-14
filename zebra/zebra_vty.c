@@ -517,7 +517,7 @@ static void vty_show_ip_route_detail(struct vty *vty, struct route_node *rn,
 					if (re->nhe_installed_id != 0 &&
 					    re->nhe_installed_id != re->nhe_id)
 						vty_out(vty, "  Installed PIC Context ID: %u\n",
-							re->pic_nhe_installed_id);
+							re->nhe_installed_id);
 				} else {
 					vty_out(vty, "  Nexthop Group ID: %u\n", re->nhe_id);
 					if (re->nhe_installed_id != 0 &&
