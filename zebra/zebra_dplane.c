@@ -2254,6 +2254,18 @@ uint32_t dplane_ctx_get_pic_nhe_id(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.pic_nhe_id;
 }
 
+uint32_t dplane_ctx_get_unresolved_nhe_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.unresolved_nhe.id;
+}
+
+uint32_t dplane_ctx_get_unresolved_pic_nhe_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.unresolved_nhe.pic_nhe_id;
+}
+
 uint32_t dplane_ctx_get_old_nhe_id(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
@@ -3534,6 +3546,9 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		if (nhe->pic_nhe)
 			ctx->u.rinfo.nhe.pic_nhe_id = nhe->pic_nhe->id;
 		ctx->u.rinfo.unresolved_nhe.id = re->nhe->id;
+		if (re->nhe->pic_nhe)
+			ctx->u.rinfo.unresolved_nhe.pic_nhe_id = re->nhe->pic_nhe->id;
+
 		ctx->u.rinfo.unresolved_nhe.old_id = 0;
 		/*
 		 * Check if the nhe is installed/queued before doing anything
