@@ -2320,9 +2320,6 @@ static int nexthop_active(struct nexthop *nexthop, struct nhg_hash_entry *nhe,
 	nexthops_free(nexthop->resolved);
 	nexthop->resolved = NULL;
 
-	if (nexthop->nh_srv6)
-		return 1;
-
 	/*
 	 * Set afi based on nexthop type.
 	 * Some nexthop types get special handling, possibly skipping
