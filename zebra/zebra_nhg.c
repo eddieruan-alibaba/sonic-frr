@@ -414,6 +414,8 @@ struct nhg_hash_entry *zebra_nhe_copy(const struct nhg_hash_entry *orig,
 	nhe->type = orig->type ? orig->type : ZEBRA_ROUTE_NHG;
 	nhe->refcnt = 0;
 	nhe->dplane_ref = zebra_router_get_next_sequence();
+	if (CHECK_FLAG(orig->flags, NEXTHOP_GROUP_PIC_NHT))
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT);
 
 	/* Copy backup info also, if present */
 	if (orig->backup_info)
