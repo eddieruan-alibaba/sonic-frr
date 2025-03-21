@@ -3430,8 +3430,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-			zlog_debug("%s: valid flag set for nh %pNG", __func__,
-				   nhe);
+			zlog_debug("%s: valid flag (flags %x) set for nh %pNG", __func__,
+				   nhe->flags, nhe);
 	}
 
 	if ((type != ZEBRA_ROUTE_CONNECT && type != ZEBRA_ROUTE_LOCAL &&
@@ -3456,10 +3456,18 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		if (!ZEBRA_NHG_CREATED(nhe))
 			nhe->type = ZEBRA_ROUTE_NHG;
 
-		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT))
+		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT)) {
 			ret = dplane_pic_nh_add(nhe);
-		else
+			if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+				zlog_debug("%s: PIC handling for  nh %pNG", __func__,
+					   nhe);
+		}
+		else {
 			ret = dplane_nexthop_add(nhe);
+			if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+				zlog_debug("%s: Normal NH handling for  nh %pNG", __func__,
+					   nhe);
+		}
 
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:
