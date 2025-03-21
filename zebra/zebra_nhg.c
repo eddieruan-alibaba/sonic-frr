@@ -3458,16 +3458,15 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		if (!ZEBRA_NHG_CREATED(nhe))
 			nhe->type = ZEBRA_ROUTE_NHG;
 
-		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT)) {
+		/* If nhe contains pic_nhe, then it is the NH contains a PIC context */
+		if (nhe->pic_nhe)
 			ret = dplane_pic_nh_add(nhe);
-			if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-				zlog_debug("%s: PIC handling for  nh %pNG", __func__,
+			zlog_debug("%s: PIC handling for  nh %pNG", __func__,
 					   nhe);
 		}
 		else {
 			ret = dplane_nexthop_add(nhe);
-			if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-				zlog_debug("%s: Normal NH handling for  nh %pNG", __func__,
+			zlog_debug("%s: Normal NH handling for  nh %pNG", __func__,
 					   nhe);
 		}
 
