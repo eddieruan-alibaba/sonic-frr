@@ -3459,7 +3459,7 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 			nhe->type = ZEBRA_ROUTE_NHG;
 
 		/* If nhe contains pic_nhe, then it is the NH contains a PIC context */
-		if (nhe->pic_nhe)
+		if (nhe->pic_nhe) {
 			ret = dplane_pic_nh_add(nhe);
 			zlog_debug("%s: PIC handling for  nh %pNG", __func__,
 					   nhe);
