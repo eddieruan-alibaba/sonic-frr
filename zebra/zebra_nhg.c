@@ -3463,11 +3463,11 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 			ret = dplane_pic_nh_add(nhe);
 			zlog_debug("%s: PIC handling for  nh %pNG", __func__,
 					   nhe);
-		} else {
-			ret = dplane_nexthop_add(nhe);
-			zlog_debug("%s: Normal NH handling for  nh %pNG", __func__,
-					   nhe);
 		}
+
+		ret = dplane_nexthop_add(nhe);
+		zlog_debug("%s: Normal NH handling for  nh %pNG", __func__,
+					   nhe);
 
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:
@@ -3490,11 +3490,12 @@ void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 	enum zebra_dplane_result ret;
 
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
-		if (!nhe->pic_nhe)
-			ret = dplane_nexthop_delete(nhe);
-		else
+
+
+		if (nhe->pic_nhe)
 			ret = dplane_pic_nh_delete(nhe);
 
+		ret = dplane_nexthop_delete(nhe);
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
