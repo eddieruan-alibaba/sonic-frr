@@ -513,6 +513,8 @@ uint32_t dplane_ctx_get_notif_provider(const struct zebra_dplane_ctx *ctx);
 void dplane_ctx_set_type(struct zebra_dplane_ctx *ctx, int type);
 int dplane_ctx_get_type(const struct zebra_dplane_ctx *ctx);
 int dplane_ctx_get_old_type(const struct zebra_dplane_ctx *ctx);
+int dplane_ctx_get_old_flags(const struct zebra_dplane_ctx *ctx);
+void dplane_ctx_set_old_flags(struct zebra_dplane_ctx *ctx, uint32_t flags);
 void dplane_ctx_set_afi(struct zebra_dplane_ctx *ctx, afi_t afi);
 afi_t dplane_ctx_get_afi(const struct zebra_dplane_ctx *ctx);
 void dplane_ctx_set_safi(struct zebra_dplane_ctx *ctx, safi_t safi);

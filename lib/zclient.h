@@ -586,6 +586,8 @@ struct zapi_route {
  */
 #define ZEBRA_FLAG_TABLEID 0x800
 
+#define ZEBRA_FLAG_KERNEL_BYPASS      0x800
+
 	/* The older XXX_MESSAGE flags live here */
 	uint32_t message;
 
