@@ -2727,6 +2727,7 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 	int type = dplane_ctx_get_nhe_type(ctx);
 	struct rtattr *nest;
 	uint16_t encap;
+	uint32_t flag = dplane_ctx_get_flags(ctx);
 	struct nlsock *nl =
 		kernel_netlink_nlsock_lookup(dplane_ctx_get_ns_sock(ctx));
 
@@ -2754,6 +2755,14 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 		if (IS_ZEBRA_DEBUG_KERNEL || IS_ZEBRA_DEBUG_NHG)
 			zlog_debug(
 				"%s: nhg_id %u (%s): proto-based nexthops only, ignoring",
+				__func__, id, zebra_route_string(type));
+		return 0;
+	}
+
+	if (CHECK_FLAG(flag, ZEBRA_FLAG_KERNEL_BYPASS) && !fpm) {
+		if (IS_ZEBRA_DEBUG_KERNEL || IS_ZEBRA_DEBUG_NHG)
+			zlog_debug(
+				"%s: nhg_id %u (%s): this nexthops no need to install kernel, ignoring",
 				__func__, id, zebra_route_string(type));
 		return 0;
 	}
@@ -3105,8 +3114,10 @@ enum netlink_msg_status
 netlink_put_nexthop_update_msg(struct nl_batch *bth,
 			       struct zebra_dplane_ctx *ctx)
 {
+	uint32_t flag;
+    flag = dplane_ctx_get_flags(ctx);
 	/* Nothing to do if the kernel doesn't support nexthop objects */
-	if (!kernel_nexthops_supported())
+	if (!kernel_nexthops_supported() || CHECK_FLAG(flag, ZEBRA_FLAG_KERNEL_BYPASS))
 		return FRR_NETLINK_SUCCESS;
 
 	return netlink_batch_add_msg(bth, ctx, netlink_nexthop_msg_encoder,
@@ -3132,6 +3143,23 @@ netlink_put_route_update_msg(struct nl_batch *bth, struct zebra_dplane_ctx *ctx)
 {
 	int cmd;
 	const struct prefix *p = dplane_ctx_get_dest(ctx);
+	uint32_t flag, old_flag;
+
+	flag = dplane_ctx_get_flags(ctx);
+	old_flag = dplane_ctx_get_old_flags(ctx);
+
+	/* If new route is set kernel-bypass,we just return success
+	 *  unless old route is not kernel-bypass when update operation .
+	 */
+	if (CHECK_FLAG(flag, ZEBRA_FLAG_KERNEL_BYPASS)) {
+		if (dplane_ctx_get_op(ctx) == DPLANE_OP_ROUTE_UPDATE &&
+		    !CHECK_FLAG(old_flag, ZEBRA_FLAG_KERNEL_BYPASS) &&
+					!RSYSTEM_ROUTE(dplane_ctx_get_old_type(ctx)))
+			netlink_batch_add_msg(bth, ctx,
+					      netlink_delroute_msg_encoder,
+					      true);
+		return FRR_NETLINK_SUCCESS;
+	}
 
 	if (dplane_ctx_get_op(ctx) == DPLANE_OP_ROUTE_DELETE) {
 		cmd = RTM_DELROUTE;
