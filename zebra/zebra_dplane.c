@@ -4555,6 +4555,12 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
+		uint32_t flags = dplane_ctx_get_flags(ctx);
+		if (nhe->pic_nhe) {
+			SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+		}
+		dplane_ctx_set_flags(ctx, flags);
+		zlog_err("dplane_nexthop_update_internal : id %d set flags %x", nhe->id, flags);
 
 		ret = dplane_update_enqueue(ctx);
 	}
