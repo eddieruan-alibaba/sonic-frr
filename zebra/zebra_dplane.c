@@ -3757,6 +3757,7 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 {
 	struct zebra_vrf *zvrf = NULL;
 	struct zebra_ns *zns = NULL;
+	uint32_t flags = 0;
 	int ret = EINVAL;
 
 	if (!ctx || !nhe)
@@ -3770,6 +3771,10 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	ctx->u.rinfo.nhe.afi = nhe->afi;
 	ctx->u.rinfo.nhe.vrf_id = nhe->vrf_id;
 	ctx->u.rinfo.nhe.type = nhe->type;
+
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS))
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+	dplane_ctx_set_flags(ctx, flags);
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
 

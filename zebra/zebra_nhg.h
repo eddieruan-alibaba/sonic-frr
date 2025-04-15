@@ -181,6 +181,7 @@ struct nhg_hash_entry {
  * FPM as the dplane, it is necessary to deliver this PIC next hop.
  */
 #define NEXTHOP_GROUP_PIC_NHT		    (1 << 10)
+#define NEXTHOP_GROUP_KERNEL_BYPASS (1 << 11)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */

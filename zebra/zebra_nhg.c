@@ -430,6 +430,8 @@ void zebra_nhe_init(struct nhg_hash_entry *nhe, afi_t afi,
 			break;
 		}
 	}
+	if (nh && nh->nh_srv6)
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 }
 
 struct nhg_hash_entry *zebra_nhg_alloc(void)
@@ -463,6 +465,8 @@ struct nhg_hash_entry *zebra_nhe_copy(const struct nhg_hash_entry *orig,
 	nhe->dplane_ref = zebra_router_get_next_sequence();
 	if (CHECK_FLAG(orig->flags, NEXTHOP_GROUP_PIC_NHT))
 		SET_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT);
+	if (CHECK_FLAG(orig->flags, NEXTHOP_GROUP_KERNEL_BYPASS))
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
 	/* Copy backup info also, if present */
 	if (orig->backup_info)
@@ -839,6 +843,9 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 	if (CHECK_FLAG(nh->flags, NEXTHOP_FLAG_ACTIVE))
 		SET_FLAG(newnhe->flags, NEXTHOP_GROUP_VALID);
 
+	if (nh->nh_srv6 && !sid_zero(&nh->nh_srv6->seg6_segs))
+		SET_FLAG(newnhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
+
 	if (nh->next == NULL && newnhe->id < ZEBRA_NHG_PROTO_LOWER) {
 		if (CHECK_FLAG(nh->flags, NEXTHOP_FLAG_RECURSIVE)) {
 			/* Single recursive nexthop */
@@ -950,6 +957,7 @@ bool zebra_pic_nhe_find(struct nhg_hash_entry **pic_nhe, /* return value */
 	pic_nh_lookup.type = ZEBRA_ROUTE_NHG;
 	pic_nh_lookup.vrf_id = nhe->vrf_id;
 	SET_FLAG(pic_nh_lookup.flags, NEXTHOP_GROUP_PIC_NHT);
+	SET_FLAG(pic_nh_lookup.flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 	/* the nhg.nexthop is sorted */
 	for (nh = nhe->nhg.nexthop; nh; nh = nh->next) {
 		if (nh->type == NEXTHOP_TYPE_IFINDEX)
@@ -3722,6 +3730,7 @@ void zebra_nhg_dplane_result(struct zebra_dplane_ctx *ctx)
 
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL);
+		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 		switch (status) {
 		case ZEBRA_DPLANE_REQUEST_SUCCESS:
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
