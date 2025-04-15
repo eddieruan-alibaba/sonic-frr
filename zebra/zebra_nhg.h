@@ -172,6 +172,7 @@ struct nhg_hash_entry {
  */
 #define NEXTHOP_GROUP_INITIAL_DELAY_INSTALL (1 << 9)
 #define NEXTHOP_GROUP_PIC_NHT		    (1 << 10)
+#define NEXTHOP_GROUP_KERNEL_BYPASS (1 << 11)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */
