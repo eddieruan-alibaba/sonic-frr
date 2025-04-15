@@ -3486,6 +3486,8 @@ void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret;
 
+	zlog_info("zebra_nhg_uninstall_kernel nhe %d flags %x", nhe->id, nhe->flags)
+
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT) || !nhe->pic_nhe)
 			ret = dplane_nexthop_delete(nhe);

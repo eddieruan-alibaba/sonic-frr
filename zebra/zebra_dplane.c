@@ -4524,6 +4524,15 @@ enum zebra_dplane_result dplane_tc_filter_update(struct zebra_tc_filter *filter)
 	return tc_filter_update_internal(DPLANE_OP_TC_FILTER_UPDATE, filter);
 }
 
+static uint32_t
+need_skip_kernel(struct nhg_hash_entry *nhe, uint32_t flags) {
+	if (nhe->pic_nhe) {
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+	} else if (nhe->nhg.nexthop->ifindex == 0) {
+		SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
+	}
+	return flags;
+}
 /**
  * dplane_nexthop_update_internal() - Helper for enqueuing nexthop changes
  *
@@ -4556,9 +4565,7 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
 		uint32_t flags = dplane_ctx_get_flags(ctx);
-		if (nhe->pic_nhe) {
-			SET_FLAG(flags, ZEBRA_FLAG_KERNEL_BYPASS);
-		}
+		flags = need_skip_kernel(nhe, flags);
 		dplane_ctx_set_flags(ctx, flags);
 		zlog_info("dplane_nexthop_update_internal : id %d op %d, set flags %x", nhe->id, (uint32_t) op, flags);
 
