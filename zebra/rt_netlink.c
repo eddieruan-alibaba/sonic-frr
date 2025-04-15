@@ -2844,13 +2844,14 @@ ssize_t netlink_nexthop_msg_encode(uint16_t cmd,
 				/* Don't need anymore info for this */
 				break;
 			}
-
+/* Disable it . TODO
 			if (!nh->ifindex) {
 				flog_err(
 					EC_ZEBRA_NHG_FIB_UPDATE,
 					"Context received for kernel nexthop update without an interface");
 				return -1;
 			}
+*/
 
 			if (!nl_attr_put32(&req->n, buflen, NHA_OIF,
 					   nh->ifindex))
