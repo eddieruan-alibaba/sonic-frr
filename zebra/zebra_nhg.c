@@ -763,9 +763,13 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 	/* Mail back the new object */
 	*nhe = newnhe;
 
+	/* Pass KERNEL BYPASS FLAG*/
+	if (CHECK_FLAG(nh->flags, NEXTHOP_GROUP_KERNEL_BYPASS))
+		SET_FLAG(newnhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
+
 	if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-		zlog_debug("%s: => created %p (%pNG)", __func__, newnhe,
-			   newnhe);
+		zlog_debug("%s: => created %p (%pNG), flags %x", __func__, newnhe,
+			   newnhe, newnhe->flags);
 
 	/* Only hash/lookup the depends if the first lookup
 	 * fails to find something. This should hopefully save a
