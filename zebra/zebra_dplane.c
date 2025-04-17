@@ -4544,6 +4544,7 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 	int ret;
 	struct zebra_dplane_ctx *ctx = NULL;
 
+	zlog_info("dplane_nexthop_update_internal : id %d flags %x op %d", nhe->id, nhe->flags, op)
 	/* Obtain context block */
 	ctx = dplane_ctx_alloc();
 
