@@ -763,7 +763,7 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 
 	/* Mail back the new object */
 	// Cache flags
-	flags = nhe->flags;
+	flags = (*nhe)->flags;
 	*nhe = newnhe;
 
 	/* Pass KERNEL BYPASS FLAG*/
