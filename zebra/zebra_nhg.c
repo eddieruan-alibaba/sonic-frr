@@ -716,7 +716,6 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 	bool recursive = false;
 	struct nhg_hash_entry *newnhe, *backup_nhe, *pic_nhe;
 	struct nexthop *nh = NULL;
-	uint32_t flags = 0;
 
 
 	if (lookup->id)
@@ -762,12 +761,10 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 	created = true;
 
 	/* Mail back the new object */
-	// Cache flags
-	flags = (*nhe)->flags;
 	*nhe = newnhe;
 
 	/* Pass KERNEL BYPASS FLAG*/
-	if (CHECK_FLAG(flags, NEXTHOP_GROUP_KERNEL_BYPASS))
+	if (CHECK_FLAG(lookup->flags, NEXTHOP_GROUP_KERNEL_BYPASS))
 		SET_FLAG(newnhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
 	if (IS_ZEBRA_DEBUG_NHG_DETAIL)
