@@ -1167,7 +1167,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		vty_out(vty, "\n");
 
 		vty_out(vty, "     Uptime: %s\n", up_str);
-		vty_out(vty, "     Flags: %x\n", nhe->flags;
+		vty_out(vty, "     Flags: %x\n", nhe->flags);
 		vty_out(vty, "     VRF: %s(%s)\n", vrf_id_to_name(nhe->vrf_id),
 			afi2str(nhe->afi));
 	}
