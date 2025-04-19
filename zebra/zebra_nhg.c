@@ -3447,8 +3447,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-			zlog_debug("%s: valid flag set for nh %pNG", __func__,
-				   nhe);
+			zlog_debug("%s: valid flag set for nh %pNG flags %x", __func__,
+				   nhe, nhe->flags);
 	}
 
 	if ((type != ZEBRA_ROUTE_CONNECT && type != ZEBRA_ROUTE_LOCAL &&
@@ -3497,6 +3497,9 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret;
+
+	if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+		zlog_debug("%s: unistall %pNG, flags %x", __func__, nhe, nhe->flags);
 
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_PIC_NHT) || !nhe->pic_nhe)

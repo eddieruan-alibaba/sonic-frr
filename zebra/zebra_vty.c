@@ -1150,6 +1150,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 						      sizeof(time_left),
 						      nhe->timer));
 		json_object_string_add(json, "uptime", up_str);
+		json_object_int_add(json, "flags", nhe->flags);
 		json_object_string_add(json, "vrf",
 				       vrf_id_to_name(nhe->vrf_id));
 		json_object_string_add(json, "afi", afi2str(nhe->afi));
@@ -1166,6 +1167,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		vty_out(vty, "\n");
 
 		vty_out(vty, "     Uptime: %s\n", up_str);
+		vty_out(vty, "     Flags: %x\n", nhe->flags;
 		vty_out(vty, "     VRF: %s(%s)\n", vrf_id_to_name(nhe->vrf_id),
 			afi2str(nhe->afi));
 	}
