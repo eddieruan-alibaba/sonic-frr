@@ -279,13 +279,14 @@ static inline void vpn_leak_postchange(enum vpn_policy_direction direction,
 		}
 
 		if (bgp_vrf->vpn_policy[afi].tovpn_sid_index == 0 &&
-		    !CHECK_FLAG(bgp_vrf->vpn_policy[afi].flags,
-				BGP_VPN_POLICY_TOVPN_SID_AUTO) &&
+		    !CHECK_FLAG(bgp_vrf->vpn_policy[afi].flags, BGP_VPN_POLICY_TOVPN_SID_AUTO) &&
 		    bgp_vrf->tovpn_sid_index == 0 &&
-		    !CHECK_FLAG(bgp_vrf->vrf_flags, BGP_VRF_TOVPN_SID_AUTO))
+		    !CHECK_FLAG(bgp_vrf->vrf_flags, BGP_VRF_TOVPN_SID_AUTO) &&
+		    !CHECK_FLAG(bgp_vrf->vrf_flags, BGP_VRF_TOVPN_SID_EXPLICIT))
 			delete_vrf_tovpn_sid(bgp_vpn, bgp_vrf, afi);
 
-		if (!bgp_vrf->vpn_policy[afi].tovpn_sid && !bgp_vrf->tovpn_sid)
+		if (CHECK_FLAG(bgp_vrf->vrf_flags, BGP_VRF_TOVPN_SID_EXPLICIT) ||
+		    (!bgp_vrf->vpn_policy[afi].tovpn_sid && !bgp_vrf->tovpn_sid))
 			ensure_vrf_tovpn_sid(bgp_vpn, bgp_vrf, afi);
 
 		if ((!bgp_vrf->vpn_policy[afi].tovpn_sid &&
