@@ -70,6 +70,7 @@ struct seg6_segs {
 };
 
 struct seg6local_context {
+	uint8_t family;
 	struct in_addr nh4;
 	struct in6_addr nh6;
 	uint32_t table;

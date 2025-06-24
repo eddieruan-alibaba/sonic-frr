@@ -501,6 +501,7 @@ DEFPY (install_seg6local_routes,
 	} else if (seg6l_endx) {
 		action = ZEBRA_SEG6_LOCAL_ACTION_END_X;
 		ctx.nh6 = seg6l_endx_nh6;
+		ctx.family = AF_INET6;
 	} else if (seg6l_endt) {
 		action = ZEBRA_SEG6_LOCAL_ACTION_END_T;
 		ctx.table = seg6l_endt_table;

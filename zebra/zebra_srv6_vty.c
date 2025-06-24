@@ -574,7 +574,7 @@ DEFPY (locator_prefix,
 	struct listnode *node = NULL;
 	enum seg6local_action_t sidaction = ZEBRA_SEG6_LOCAL_ACTION_UNSPEC;
 	int idx = 0;
-	char *vrfName = NULL;
+	char *vrfName = VRF_DEFAULT_NAME;
 	char *prefix = NULL;
 	int ret = 0;
 	struct prefix_ipv6 ipv6prefix = {0};

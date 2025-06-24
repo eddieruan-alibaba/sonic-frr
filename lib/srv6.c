@@ -93,7 +93,10 @@ const char *seg6local_context2str(char *str, size_t size,
 
 	case ZEBRA_SEG6_LOCAL_ACTION_END_X:
 	case ZEBRA_SEG6_LOCAL_ACTION_END_DX6:
-		snprintfrr(str, size, "nh6 %pI6", &ctx->nh6);
+		if (ctx->family == AF_INET6)
+			snprintfrr(str, size, "nh6 %pI6", &ctx->nh6);
+		else if (ctx->family == AF_INET)
+			snprintfrr(str, size, "nh4 %pI4", &ctx->nh4);
 		return str;
 
 	case ZEBRA_SEG6_LOCAL_ACTION_END_DX4:
