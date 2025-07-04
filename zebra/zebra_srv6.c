@@ -1187,9 +1187,9 @@ static bool alloc_srv6_sid_func_explicit(struct zebra_srv6_sid_block *block,
 						break;
 
 				if (sid_func_ptr) {
-					zlog_err("%s: invalid SM request arguments: SID function %u already taken",
+					zlog_err("%s:  SID function %u already taken return true",
 						 __func__, sid_func);
-					return false;
+					return true;
 				}
 
 				/*
@@ -1215,9 +1215,9 @@ static bool alloc_srv6_sid_func_explicit(struct zebra_srv6_sid_block *block,
 						break;
 
 				if (sid_wide_func_ptr) {
-					zlog_err("%s: invalid SM request arguments: SID function %u already taken",
+					zlog_err("%s:  SID function %u already taken 2",
 						 __func__, sid_func);
-					return false;
+					return true;
 				}
 
 				/*
