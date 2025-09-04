@@ -5283,9 +5283,6 @@ static void rib_process_dplane_results(struct event *thread)
 				rib_process_dplane_notify(ctx);
 				break;
 
-			case DPLANE_OP_PIC_NH_INSTALL:
-			case DPLANE_OP_PIC_NH_UPDATE:
-			case DPLANE_OP_PIC_NH_DELETE:
 			case DPLANE_OP_NH_INSTALL:
 			case DPLANE_OP_NH_UPDATE:
 			case DPLANE_OP_NH_DELETE:
