@@ -3674,6 +3674,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret;
+
+	zlog_err("%s : (%pNG) flag %x", __func__, nhe, nhe->flags);
 	/*
 	 * Clearly if the nexthop group is installed we should
 	 * remove it.  Additionally If the nexthop is already
@@ -3690,6 +3692,7 @@ void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 		else
 			ret = dplane_nexthop_delete(nhe);
 
+		zlog_err("%s : (%pNG) flag %x ret %d", __func__, nhe, nhe->flags, ret);
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);

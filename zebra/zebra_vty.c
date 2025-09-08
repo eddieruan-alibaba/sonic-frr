@@ -1128,6 +1128,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 				       vrf_id_to_name(nhe->vrf_id));
 		json_object_string_add(json, "afi", zebra_nhg_afi2str(nhe));
 		json_object_int_add(json, "nexthopCount", nexthop_count);
+		json_object_int_add(json, "flags", nhe->flags);
 
 	} else {
 		vty_out(vty, "ID: %u (%s)\n", nhe->id,
@@ -1144,6 +1145,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		vty_out(vty, "     VRF: %s(%s)\n", vrf_id_to_name(nhe->vrf_id),
 			zebra_nhg_afi2str(nhe));
 		vty_out(vty, "     Nexthop Count: %u\n", nexthop_count);
+		vty_out(vty, "     Flags: %x\n", nhe->flags);
 	}
 
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID)) {
