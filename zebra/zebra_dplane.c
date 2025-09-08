@@ -4817,7 +4817,7 @@ enum zebra_dplane_result dplane_pic_nh_add(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
 
-	zebra_err("%s, id %u", __func__, nhe->id);
+	zlog_err("%s, id %u", __func__, nhe->id);
 
 	if (nhe)
 		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_PIC_NH_INSTALL);
@@ -4827,7 +4827,7 @@ enum zebra_dplane_result dplane_pic_nh_add(struct nhg_hash_entry *nhe)
 enum zebra_dplane_result dplane_pic_nh_delete(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
-	zebra_err("%s, id %u", __func__, nhe->id);
+	zlog_err("%s, id %u", __func__, nhe->id);
 	if (nhe)
 		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_PIC_NH_DELETE);
 
@@ -4840,7 +4840,7 @@ enum zebra_dplane_result dplane_pic_nh_delete(struct nhg_hash_entry *nhe)
 enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
-	zebra_err("%s, id %u", __func__, nhe->id);
+	zlog_err("%s, id %u", __func__, nhe->id);
 	if (nhe)
 		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_NH_INSTALL);
 	return ret;
@@ -4854,7 +4854,7 @@ enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe)
 enum zebra_dplane_result dplane_nexthop_update(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
-	zebra_err("%s, id %u", __func__, nhe->id);
+	zlog_err("%s, id %u", __func__, nhe->id);
 	if (nhe)
 		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_NH_UPDATE);
 	return ret;
@@ -4866,7 +4866,7 @@ enum zebra_dplane_result dplane_nexthop_update(struct nhg_hash_entry *nhe)
 enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
-	zebra_err("%s, id %u", __func__, nhe->id);
+	zlog_err("%s, id %u", __func__, nhe->id);
 	if (nhe)
 		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_NH_DELETE);
 
