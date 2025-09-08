@@ -433,7 +433,7 @@ void zebra_nhe_init(struct nhg_hash_entry *nhe, afi_t afi,
 	if (nh && nh->nh_srv6)
 		SET_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
-	zebra_err("%s : flags %x", __func__, nhe->flags);
+	zlog_err("%s : flags %x", __func__, nhe->flags);
 }
 
 struct nhg_hash_entry *zebra_nhg_alloc(void)
@@ -470,7 +470,7 @@ struct nhg_hash_entry *zebra_nhe_copy(const struct nhg_hash_entry *orig,
 	if (CHECK_FLAG(orig->flags, NEXTHOP_GROUP_KERNEL_BYPASS))
 		SET_FLAG(nhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
-	zebra_err("%s : id %u flags %x", __func__, nhe->id, nhe->flags);
+	zlog_err("%s : id %u flags %x", __func__, nhe->id, nhe->flags);
 
 	/* Copy backup info also, if present */
 	if (orig->backup_info)
@@ -824,7 +824,7 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 		zlog_debug("%s: => created %p (%pNG) flags %x", __func__, newnhe,
 			   newnhe, newnhe->flags);
 
-	zebra_err("%s : id %u flags %x", __func__, newnhe->id, newnhe->flags);
+	zlog_err("%s : id %u flags %x", __func__, newnhe->id, newnhe->flags);
 
 	/* Only hash/lookup the depends if the first lookup
 	 * fails to find something. This should hopefully save a
@@ -856,7 +856,7 @@ static bool zebra_nhe_find(struct nhg_hash_entry **nhe, /* return value */
 	if (nh->nh_srv6 && !sid_zero(&nh->nh_srv6->seg6_segs))
 		SET_FLAG(newnhe->flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
-	zebra_err("%s : id %u flags %x", __func__, newnhe->id, newnhe->flags);
+	zlog_err("%s : id %u flags %x", __func__, newnhe->id, newnhe->flags);
 
 	if (nh->next == NULL && newnhe->id < ZEBRA_NHG_PROTO_LOWER) {
 		if (CHECK_FLAG(nh->flags, NEXTHOP_FLAG_RECURSIVE)) {
@@ -971,7 +971,7 @@ bool zebra_pic_nhe_find(struct nhg_hash_entry **pic_nhe, /* return value */
 	SET_FLAG(pic_nh_lookup.flags, NEXTHOP_GROUP_PIC_NHT);
 	SET_FLAG(pic_nh_lookup.flags, NEXTHOP_GROUP_KERNEL_BYPASS);
 
-	zebra_err("%s : from nhe %u ", __func__, nhe->id);
+	zlog_err("%s : from nhe %u ", __func__, nhe->id);
 	/* the nhg.nexthop is sorted */
 	for (nh = nhe->nhg.nexthop; nh; nh = nh->next) {
 		if (nh->type == NEXTHOP_TYPE_IFINDEX)
