@@ -25,6 +25,12 @@ struct nh_grp {
 	uint8_t weight;
 };
 
+struct nh_grp_full {
+	uint32_t id;
+	uint8_t weight;
+	uint32_t num_direct;
+};
+
 PREDECL_RBTREE_UNIQ(nhg_connected_tree);
 
 /*
@@ -378,6 +384,8 @@ extern void zebra_nhg_check_valid(struct nhg_hash_entry *nhe);
 
 /* Convert nhe depends to a grp context that can be passed around safely */
 extern uint16_t zebra_nhg_nhe2grp(struct nh_grp *grp, struct nhg_hash_entry *nhe, int size);
+extern uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
+					 struct nhg_hash_entry *nhe, uint32_t max_num);
 
 /* Dataplane install/uninstall */
 extern void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type);

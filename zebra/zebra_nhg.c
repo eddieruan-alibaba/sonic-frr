@@ -3444,6 +3444,165 @@ uint16_t zebra_nhg_nhe2grp(struct nh_grp *grp, struct nhg_hash_entry *nhe, int m
 	return zebra_nhg_nhe2grp_internal(grp, 0, nhe, nhe, max_num);
 }
 
+/**
+ * Walk through the nexthops to check if this NHG is for SRv6.
+ */
+static bool is_srv6_nhg(struct nhg_hash_entry *nhe)
+{
+	bool is_srv6 = false;
+	struct nexthop *nhop = NULL;
+
+	for (ALL_NEXTHOPS_PTR(&nhe->nhg, nhop)) {
+		if (nhop->nh_srv6 != NULL) {
+			is_srv6 = true;
+			break;
+		}
+	}
+
+	return is_srv6;
+}
+
+/**
+ * Recursively construct a grp array of full depends' IDs.
+ *
+ * This function allows us to account for groups within groups,
+ * by converting them into a flat array of IDs, like zebra_nhg_nhe2grp
+ * but with recursive ones to keep depending relations.
+ */
+static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, uint32_t curr_index,
+					   struct nhg_hash_entry *nhe, struct nhg_hash_entry *original,
+					   uint32_t max_num)
+{
+	struct nhg_connected *rb_node_dep = NULL;
+	struct nhg_hash_entry *curr_node = NULL;
+	struct nexthop *nexthop;
+	uint32_t i = curr_index;
+	uint32_t direct_count = 0;
+
+	/* Add current group id into the array */
+	if (curr_index < max_num) {
+		/* set nhg id */
+		grp_full[curr_index].id = nhe->id;
+		/* set default weight as 0, and modify later if there's a resolved nexthop */
+		grp_full[curr_index].weight = 0;
+		/* set default num_direct as 0, will be updated later */
+		grp_full[curr_index].num_direct = 0;
+		i++;
+	}
+
+	/* go through all depends from current node */
+	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+		if (i >= max_num)
+			goto done;
+
+		curr_node = rb_node_dep->nhe;
+
+		/* grp_full contains all depends so we do not skip recursive ones,
+		 * but there are some other logics.
+		 *
+		 * The invalid nhg will be put in for srv6 cases but not for others,
+		 * and we will not put in uninstalled and queued ones.
+		 */
+
+		/* If it's a invalid nhg for normal case, skip */
+		if (!is_srv6_nhg(curr_node)
+		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_VALID)) {
+			if (IS_ZEBRA_DEBUG_RIB_DETAILED
+			    || IS_ZEBRA_DEBUG_NHG)
+				zlog_debug(
+					"%s: NHG ID (%u) not valid as a normal case, not appending to dplane install group",
+					__func__, curr_node->id);
+			continue;
+		}
+
+		/* If it's not installed for a normal case, skip */
+		if (!is_srv6_nhg(curr_node)
+		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED))
+		{
+			if (IS_ZEBRA_DEBUG_RIB_DETAILED
+			    || IS_ZEBRA_DEBUG_NHG)
+				zlog_debug(
+					"%s: NHG ID (%u) not installed as a normal case, not appending to dplane install group",
+					__func__, curr_node->id);
+			continue;
+		}
+
+		/* If it's queued, skip */
+		if (CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)) {
+			if (IS_ZEBRA_DEBUG_RIB_DETAILED
+			    || IS_ZEBRA_DEBUG_NHG)
+				zlog_debug(
+					"%s: NUG ID (%u) queued, not appending to dplane installing group",
+					__func__, curr_node->id);
+			continue;
+		}
+
+		if (!zebra_nhg_depends_is_empty(curr_node)) {
+			/* This is a group within a group */
+			i = zebra_nhg_nhe2grp_full_internal(grp_full, i, curr_node, original, max_num);
+			direct_count++;
+		}
+		else {
+			/* We go through the resolved nexthops to get weight,
+			 * but we do not use this to determine if put in this node.
+			 * We put in all depends nodes, and set the state flag of them.
+			 */
+			bool found = false;
+			for (ALL_NEXTHOPS_PTR(&original->nhg, nexthop)) {
+				if (CHECK_FLAG(nexthop->flags,
+					       NEXTHOP_FLAG_RECURSIVE))
+					continue;
+
+				if (nexthop_cmp_no_weight(curr_node->nhg.nexthop,
+							  nexthop) != 0)
+					continue;
+
+				found = true;
+				break;
+			}
+
+			/* If there's no resolved nexthop for a leaf node,
+			 * that means it's not a valid nhg and we record it.
+			 */
+			if (!found) {
+				if (IS_ZEBRA_DEBUG_RIB_DETAILED ||
+				    IS_ZEBRA_DEBUG_NHG)
+					zlog_debug("%s: Nexthop ID (%u) unable to find nexthop in Nexthop Group Entry, something is terribly wrong",
+						   __func__, curr_node->id);
+			}
+
+			/* Set all fields for leaf node - only once */
+			grp_full[i].id = curr_node->id;
+			grp_full[i].weight = found ? nexthop->weight : 0;
+			grp_full[i].num_direct = 0;  /* leaf node has no direct depends */
+			i++;
+			direct_count++;
+		}
+	}
+
+	/* Set number of direct depends for current node */
+	if (curr_index < max_num)
+		grp_full[curr_index].num_direct = direct_count;
+
+	if (nhe->backup_info == NULL || nhe->backup_info->nhe == NULL)
+		goto done;
+
+	/* We are not supporting backup things temporarily, so we just record */
+	if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+		zlog_debug("%s: skipping backup nhe", __func__);
+
+done:
+	return i;
+}
+
+/* Convert a nhe into a group array with full depends */
+uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
+					 struct nhg_hash_entry *nhe, uint32_t max_num)
+{
+	/* Call into the recursive function */
+	return zebra_nhg_nhe2grp_full_internal(grp_full, 0, nhe, nhe, max_num);
+}
+
 void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 {
 	struct nhg_connected *rb_node_dep = NULL;

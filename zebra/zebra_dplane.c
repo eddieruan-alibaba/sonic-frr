@@ -76,6 +76,8 @@ const uint32_t DPLANE_DEFAULT_NEW_WORK = 100;
 
 #endif	/* DPLANE_DEBUG */
 
+#define MAX_NHG_RECURSION 10
+
 /*
  * Nexthop information captured for nexthop/nexthop group updates
  */
@@ -89,6 +91,15 @@ struct dplane_nexthop_info {
 	struct nexthop_group ng;
 	struct nh_grp nh_grp[MULTIPATH_NUM];
 	uint16_t nh_grp_count;
+
+	struct nh_grp_full nh_grp_full[(MULTIPATH_NUM * MAX_NHG_RECURSION) + 1];
+	uint32_t nh_grp_full_count;
+
+	uint32_t depends[MULTIPATH_NUM + 1];
+	uint32_t depends_count;
+
+	uint32_t dependents[MULTIPATH_NUM + 1];
+	uint32_t dependents_count;
 };
 
 /*
@@ -3738,9 +3749,15 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 
 	/* If this is a group, convert it to a grp array of ids */
 	if (!zebra_nhg_depends_is_empty(nhe)
-	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))
+	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
+		/* nh_grp is for resolved nhe ids */
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+
+		/* nh_grp_full is for all depends nhe ids, including recursive ones */
+		ctx->u.rinfo.nhe.nh_grp_full_count = zebra_nhg_nhe2grp_full(
+			ctx->u.rinfo.nhe.nh_grp_full, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION);
+	}
 
 	zvrf = vrf_info_lookup(nhe->vrf_id);
 
