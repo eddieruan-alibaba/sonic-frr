@@ -2367,6 +2367,43 @@ uint16_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.nh_grp_count;
 }
 
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full;
+}
+
+uint32_t dplane_ctx_get_nhe_nh_grp_full_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full_count;
+}
+
+const uint32_t* dplane_ctx_get_nhe_depends(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.depends;
+}
+
+uint32_t dplane_ctx_get_nhe_depends_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.depends_count;
+}
+
+const uint32_t* dplane_ctx_get_nhe_dependents(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.dependents;
+}
+
+uint32_t dplane_ctx_get_nhe_dependents_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.dependents_count;
+}
+
 /* Accessors for LSP information */
 
 mpls_label_t dplane_ctx_get_in_label(const struct zebra_dplane_ctx *ctx)

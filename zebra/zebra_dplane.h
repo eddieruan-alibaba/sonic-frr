@@ -626,6 +626,13 @@ dplane_ctx_get_nhe_ng(const struct zebra_dplane_ctx *ctx);
 const struct nh_grp *
 dplane_ctx_get_nhe_nh_grp(const struct zebra_dplane_ctx *ctx);
 uint16_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx);
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_nh_grp_full_count(const struct zebra_dplane_ctx *ctx);
+const uint32_t* dplane_ctx_get_nhe_depends(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_depends_count(const struct zebra_dplane_ctx *ctx);
+const uint32_t* dplane_ctx_get_nhe_dependents(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_dependents_count(const struct zebra_dplane_ctx *ctx);
 
 /* Accessors for LSP information */
 
