@@ -3784,16 +3784,32 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
 
+	/* ========== DEBUG: NHG group compression ========== */
+	zlog_err("%s: NHG id=%u, depends_empty=%d, recursive=%d",
+		 __func__, nhe->id,
+		 zebra_nhg_depends_is_empty(nhe),
+		 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE));
+
 	/* If this is a group, convert it to a grp array of ids */
 	if (!zebra_nhg_depends_is_empty(nhe)
 	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
+		zlog_err("%s: NHG id=%u is a group, calling compression functions",
+			 __func__, nhe->id);
+
 		/* nh_grp is for resolved nhe ids */
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+		zlog_err("%s: NHG id=%u resolved grp_count=%u",
+			 __func__, nhe->id, ctx->u.rinfo.nhe.nh_grp_count);
 
 		/* nh_grp_full is for all depends nhe ids, including recursive ones */
 		ctx->u.rinfo.nhe.nh_grp_full_count = zebra_nhg_nhe2grp_full(
 			ctx->u.rinfo.nhe.nh_grp_full, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION);
+		zlog_err("%s: NHG id=%u full grp_full_count=%u",
+			 __func__, nhe->id, ctx->u.rinfo.nhe.nh_grp_full_count);
+	} else {
+		zlog_err("%s: NHG id=%u is singleton or recursive, skip compression",
+			 __func__, nhe->id);
 	}
 
 	zvrf = vrf_info_lookup(nhe->vrf_id);
@@ -4612,12 +4628,19 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 	int ret;
 	struct zebra_dplane_ctx *ctx = NULL;
 
+	/* ========== DEBUG: NHG dispatch entry ========== */
+	zlog_err("%s: [DISPATCH] NHG id=%u, op=%d, flags=0x%x, INITIAL_DELAY=%d",
+		 __func__, nhe->id, op, nhe->flags,
+		 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL));
+
 	/* Obtain context block */
 	ctx = dplane_ctx_alloc();
 
 	ret = dplane_ctx_nexthop_init(ctx, op, nhe);
 	if (ret == AOK) {
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
+			zlog_err("%s: NHG id=%u has INITIAL_DELAY, mark INSTALLED without real dispatch",
+				 __func__, nhe->id);
 			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL);
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
@@ -4629,6 +4652,10 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
 
+		zlog_err("%s: NHG id=%u enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
+			 __func__, nhe->id,
+			 ctx->u.rinfo.nhe.nh_grp_count,
+			 ctx->u.rinfo.nhe.nh_grp_full_count);
 		ret = dplane_update_enqueue(ctx);
 	}
 
@@ -4636,9 +4663,13 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 	atomic_fetch_add_explicit(&zdplane_info.dg_nexthops_in, 1,
 				  memory_order_relaxed);
 
-	if (ret == AOK)
+	if (ret == AOK) {
 		result = ZEBRA_DPLANE_REQUEST_QUEUED;
-	else {
+		zlog_err("%s: NHG id=%u enqueued successfully",
+			 __func__, nhe->id);
+	} else {
+		zlog_err("%s: NHG id=%u enqueue FAILED, ret=%d",
+			 __func__, nhe->id, ret);
 		atomic_fetch_add_explicit(&zdplane_info.dg_nexthop_errors, 1,
 					  memory_order_relaxed);
 		if (ctx)

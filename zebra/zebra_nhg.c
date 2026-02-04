@@ -3479,6 +3479,10 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 	uint32_t i = curr_index;
 	uint32_t direct_count = 0;
 
+	/* ========== DEBUG: Function entry ========== */
+	zlog_err("%s: [ENTER] nhe=%u, curr_index=%u, max_num=%u",
+		 __func__, nhe->id, curr_index, max_num);
+
 	/* Add current group id into the array */
 	if (curr_index < max_num) {
 		/* set nhg id */
@@ -3488,14 +3492,40 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		/* set default num_direct as 0, will be updated later */
 		grp_full[curr_index].num_direct = 0;
 		i++;
+		zlog_err("%s:   wrote grp_full[%u] = {id=%u, weight=0, num_direct=0}",
+			 __func__, curr_index, nhe->id);
+	} else {
+		zlog_err("%s:   WARNING: curr_index=%u >= max_num=%u, skip write",
+			 __func__, curr_index, max_num);
 	}
+
+	/* ========== DEBUG: Scan depends tree ========== */
+	uint32_t dep_scan_count = 0;
+	zlog_err("%s:   scanning depends tree of nhe=%u:", __func__, nhe->id);
+	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+		dep_scan_count++;
+		zlog_err("%s:     depend[%u] = NHG id %u",
+			 __func__, dep_scan_count, rb_node_dep->nhe->id);
+	}
+	zlog_err("%s:   total %u depends found in tree", __func__, dep_scan_count);
 
 	/* go through all depends from current node */
 	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-		if (i >= max_num)
+		if (i >= max_num) {
+			zlog_err("%s:   BREAK: i=%u >= max_num=%u",
+				 __func__, i, max_num);
 			goto done;
+		}
 
 		curr_node = rb_node_dep->nhe;
+
+		/* ========== DEBUG: Processing each depend ========== */
+		zlog_err("%s:   [PROCESSING] depend id=%u, flags=0x%x, VALID=%d, INSTALLED=%d, QUEUED=%d, has_depends=%d",
+			 __func__, curr_node->id, curr_node->flags,
+			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_VALID),
+			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED),
+			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED),
+			 !zebra_nhg_depends_is_empty(curr_node));
 
 		/* grp_full contains all depends so we do not skip recursive ones,
 		 * but there are some other logics.
@@ -3507,6 +3537,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		/* If it's a invalid nhg for normal case, skip */
 		if (!is_srv6_nhg(curr_node)
 		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_VALID)) {
+			zlog_err("%s:     SKIP: NHG ID %u not VALID (normal case)",
+				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
 				zlog_debug(
@@ -3519,6 +3551,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		if (!is_srv6_nhg(curr_node)
 		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED))
 		{
+			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED (normal case)",
+				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
 				zlog_debug(
@@ -3529,6 +3563,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 
 		/* If it's queued, skip */
 		if (CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)) {
+			zlog_err("%s:     SKIP: NHG ID %u QUEUED",
+				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
 				zlog_debug(
@@ -3539,7 +3575,11 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 
 		if (!zebra_nhg_depends_is_empty(curr_node)) {
 			/* This is a group within a group */
+			zlog_err("%s:     RECURSE: entering sub-group id=%u",
+				 __func__, curr_node->id);
 			i = zebra_nhg_nhe2grp_full_internal(grp_full, i, curr_node, original, max_num);
+			zlog_err("%s:     RECURSE: returned from id=%u, i now=%u",
+				 __func__, curr_node->id, i);
 			direct_count++;
 		}
 		else {
@@ -3548,6 +3588,9 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			 * We put in all depends nodes, and set the state flag of them.
 			 */
 			bool found = false;
+			zlog_err("%s:     LEAF: processing leaf node id=%u",
+				 __func__, curr_node->id);
+			
 			for (ALL_NEXTHOPS_PTR(&original->nhg, nexthop)) {
 				if (CHECK_FLAG(nexthop->flags,
 					       NEXTHOP_FLAG_RECURSIVE))
@@ -3558,6 +3601,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 					continue;
 
 				found = true;
+				zlog_err("%s:       MATCH: found weight=%u in original",
+					 __func__, nexthop->weight);
 				break;
 			}
 
@@ -3565,6 +3610,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			 * that means it's not a valid nhg and we record it.
 			 */
 			if (!found) {
+				zlog_err("%s:       WARNING: unable to find nexthop for id=%u in original",
+					 __func__, curr_node->id);
 				if (IS_ZEBRA_DEBUG_RIB_DETAILED ||
 				    IS_ZEBRA_DEBUG_NHG)
 					zlog_debug("%s: Nexthop ID (%u) unable to find nexthop in Nexthop Group Entry, something is terribly wrong",
@@ -3575,6 +3622,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			grp_full[i].id = curr_node->id;
 			grp_full[i].weight = found ? nexthop->weight : 0;
 			grp_full[i].num_direct = 0;  /* leaf node has no direct depends */
+			zlog_err("%s:       wrote grp_full[%u] = {id=%u, weight=%u, num_direct=0}",
+				 __func__, i, curr_node->id, found ? nexthop->weight : 0);
 			i++;
 			direct_count++;
 		}
@@ -3592,6 +3641,20 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		zlog_debug("%s: skipping backup nhe", __func__);
 
 done:
+	zlog_err("%s: [EXIT] nhe=%u, direct_count=%u, return i=%u",
+		 __func__, nhe->id, direct_count, i);
+	
+	/* ========== DEBUG: Dump final array ========== */
+	zlog_err("%s: dumping grp_full array from [%u] to [%u]:",
+		 __func__, curr_index, i > 0 ? i - 1 : 0);
+	for (uint32_t idx = curr_index; idx < i && idx < max_num; idx++) {
+		zlog_err("%s:   grp_full[%u] = {id=%u, weight=%u, num_direct=%u}",
+			 __func__, idx,
+			 grp_full[idx].id,
+			 grp_full[idx].weight,
+			 grp_full[idx].num_direct);
+	}
+	
 	return i;
 }
 
