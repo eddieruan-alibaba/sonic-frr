@@ -3477,27 +3477,17 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 	struct nhg_hash_entry *curr_node = NULL;
 	struct nexthop *nexthop;
 	uint32_t i = curr_index;
-	uint32_t direct_count = 0;
 
 	/* ========== DEBUG: Function entry ========== */
 	zlog_err("%s: [ENTER] nhe=%u, curr_index=%u, max_num=%u",
 		 __func__, nhe->id, curr_index, max_num);
 
-	/* Add current group id into the array */
-	if (curr_index < max_num) {
-		/* set nhg id */
-		grp_full[curr_index].id = nhe->id;
-		/* set default weight as 0, and modify later if there's a resolved nexthop */
-		grp_full[curr_index].weight = 0;
-		/* set default num_direct as 0, will be updated later */
-		grp_full[curr_index].num_direct = 0;
-		i++;
-		zlog_err("%s:   wrote grp_full[%u] = {id=%u, weight=0, num_direct=0}",
-			 __func__, curr_index, nhe->id);
-	} else {
-		zlog_err("%s:   WARNING: curr_index=%u >= max_num=%u, skip write",
-			 __func__, curr_index, max_num);
-	}
+	/* NOTE: We do NOT write the current node itself here.
+	 * We only write its direct depends.
+	 * Each depend will be written by its parent or at the top level.
+	 */
+	zlog_err("%s:   Processing depends of nhe=%u (not writing nhe itself)",
+		 __func__, nhe->id);
 
 	/* ========== DEBUG: Scan depends tree ========== */
 	uint32_t dep_scan_count = 0;
@@ -3520,18 +3510,19 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		curr_node = rb_node_dep->nhe;
 
 		/* ========== DEBUG: Processing each depend ========== */
-		zlog_err("%s:   [PROCESSING] depend id=%u, flags=0x%x, VALID=%d, INSTALLED=%d, QUEUED=%d, has_depends=%d",
+		zlog_err("%s:   [PROCESSING] depend id=%u, flags=0x%x, VALID=%d, INSTALLED=%d, QUEUED=%d, RECURSIVE=%d, has_depends=%d",
 			 __func__, curr_node->id, curr_node->flags,
 			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_VALID),
 			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED),
 			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED),
+			 CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_RECURSIVE),
 			 !zebra_nhg_depends_is_empty(curr_node));
 
 		/* grp_full contains all depends so we do not skip recursive ones,
 		 * but there are some other logics.
 		 *
 		 * The invalid nhg will be put in for srv6 cases but not for others,
-		 * and we will not put in uninstalled and queued ones.
+		 * and we will put in installed or queued ones (same logic as zebra_nhg_nhe2grp_internal).
 		 */
 
 		/* If it's a invalid nhg for normal case, skip */
@@ -3547,40 +3538,78 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			continue;
 		}
 
-		/* If it's not installed for a normal case, skip */
+		/* If it's neither installed nor queued for a normal case, skip (same logic as zebra_nhg_nhe2grp_internal) */
 		if (!is_srv6_nhg(curr_node)
-		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED))
+		    && !(CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED) ||
+		         CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)))
 		{
-			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED (normal case)",
+			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED and not QUEUED (normal case) - dependency not ready",
 				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
 				zlog_debug(
-					"%s: NHG ID (%u) not installed as a normal case, not appending to dplane install group",
+					"%s: NHG ID (%u) not installed or queued as a normal case, not appending to dplane install group",
 					__func__, curr_node->id);
 			continue;
 		}
 
-		/* If it's queued, skip */
+		/* If it's queued, we just log but not skip */
 		if (CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)) {
-			zlog_err("%s:     SKIP: NHG ID %u QUEUED",
+			zlog_err("%s:     ADD QUEUED NODE: NHG ID %u QUEUED - dependency being installed, we add it to nh_grp_full array.",
 				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
 				zlog_debug(
-					"%s: NUG ID (%u) queued, not appending to dplane installing group",
+					"%s: NUG ID (%u) queued, dependency being installed, we add it to nh_grp_full array.",
 					__func__, curr_node->id);
-			continue;
 		}
 
 		if (!zebra_nhg_depends_is_empty(curr_node)) {
 			/* This is a group within a group */
-			zlog_err("%s:     RECURSE: entering sub-group id=%u",
+			zlog_err("%s:     SUB-GROUP: depend id=%u has sub-depends",
+				 __func__, curr_node->id);
+			
+			/* First, write the depend node itself with num_direct */
+			if (i < max_num) {
+				uint32_t sub_depend_count = 0;
+				struct nhg_connected *sub_rb_node = NULL;
+				
+				/* Count how many sub-depends this node has */
+				zlog_err("%s:       counting sub-depends of id=%u:", __func__, curr_node->id);
+				frr_each(nhg_connected_tree, &curr_node->nhg_depends, sub_rb_node) {
+					/* Apply same filters as main loop */
+					if (!is_srv6_nhg(sub_rb_node->nhe)
+					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_VALID)) {
+						zlog_err("%s:         sub-depend id=%u SKIP: not VALID",
+							 __func__, sub_rb_node->nhe->id);
+						continue;
+					}
+					if (!is_srv6_nhg(sub_rb_node->nhe)
+					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
+						zlog_err("%s:         sub-depend id=%u SKIP: not INSTALLED",
+							 __func__, sub_rb_node->nhe->id);
+						continue;
+					}
+					zlog_err("%s:         sub-depend id=%u COUNTED",
+						 __func__, sub_rb_node->nhe->id);
+					sub_depend_count++;
+				}
+				zlog_err("%s:       total valid sub-depends: %u", __func__, sub_depend_count);
+				
+				grp_full[i].id = curr_node->id;
+				grp_full[i].weight = 0;  /* group nodes have weight 0 */
+				grp_full[i].num_direct = sub_depend_count;
+				zlog_err("%s:       wrote grp_full[%u] = {id=%u, weight=0, num_direct=%u}",
+					 __func__, i, curr_node->id, sub_depend_count);
+				i++;
+			}
+			
+			/* Then, recursively write its sub-depends */
+			zlog_err("%s:       RECURSE: entering sub-group id=%u",
 				 __func__, curr_node->id);
 			i = zebra_nhg_nhe2grp_full_internal(grp_full, i, curr_node, original, max_num);
-			zlog_err("%s:     RECURSE: returned from id=%u, i now=%u",
+			zlog_err("%s:       RECURSE: returned from id=%u, i now=%u",
 				 __func__, curr_node->id, i);
-			direct_count++;
 		}
 		else {
 			/* We go through the resolved nexthops to get weight,
@@ -3625,13 +3654,12 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			zlog_err("%s:       wrote grp_full[%u] = {id=%u, weight=%u, num_direct=0}",
 				 __func__, i, curr_node->id, found ? nexthop->weight : 0);
 			i++;
-			direct_count++;
 		}
 	}
 
-	/* Set number of direct depends for current node */
-	if (curr_index < max_num)
-		grp_full[curr_index].num_direct = direct_count;
+	/* NOTE: No need to update num_direct here anymore,
+	 * because we write each node with its num_direct when we encounter it.
+	 */
 
 	if (nhe->backup_info == NULL || nhe->backup_info->nhe == NULL)
 		goto done;
@@ -3641,8 +3669,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		zlog_debug("%s: skipping backup nhe", __func__);
 
 done:
-	zlog_err("%s: [EXIT] nhe=%u, direct_count=%u, return i=%u",
-		 __func__, nhe->id, direct_count, i);
+	zlog_err("%s: [EXIT] nhe=%u, return i=%u",
+		 __func__, nhe->id, i);
 	
 	/* ========== DEBUG: Dump final array ========== */
 	zlog_err("%s: dumping grp_full array from [%u] to [%u]:",
