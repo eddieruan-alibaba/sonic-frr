@@ -1929,7 +1929,7 @@ uint32_t dplane_ctx_get_flags(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.zd_flags;
 }
 
-void dplane_ctx_set_flags(struct zebra_dplane_ctx *ctx, uint32_t flags)
+void dplane_ctx_set_flagsƒ(struct zebra_dplane_ctx *ctx, uint32_t flags)
 {
 	DPLANE_CTX_VALID(ctx);
 
@@ -3504,6 +3504,10 @@ int dplane_ctx_route_init_basic(struct zebra_dplane_ctx *ctx,
 	ctx->u.rinfo.zd_afi = afi;
 	ctx->u.rinfo.zd_safi = safi;
 
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
+		zlog_debug("dplane_ctx_route_init_basic: op %u, seq %u, re %p", op, ctx->zd_seq, re);
+
+
 	return AOK;
 }
 
@@ -3647,7 +3651,8 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	 */
 	re->dplane_sequence = zebra_router_get_next_sequence();
 	ctx->zd_seq = re->dplane_sequence;
-
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
+		zlog_debug("dplane_ctx_route_init: op %u, seq %u, re %p", op, ctx->zd_seq, re);
 	return AOK;
 }
 

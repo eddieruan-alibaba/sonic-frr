@@ -987,13 +987,13 @@ static int netlink_route_read_unicast_ctx(struct nlmsghdr *h, ns_id_t ns_id,
 		char buf2[PREFIX_STRLEN];
 
 		zlog_debug(
-			"%s %pFX%s%s nsid: %u table_id: %u metric: %d Admin Distance: %d",
+			"%s %pFX%s%s nsid: %u table_id: %u metric: %d Admin Distance: %d flags: 0x%x",
 			nl_msg_type_to_str(h->nlmsg_type), &p,
 			src_p.prefixlen ? " from " : "",
 			src_p.prefixlen ? prefix2str(&src_p, buf2, sizeof(buf2))
 					: "",
-			ns_id, tableid, metric, distance);
-	}
+			ns_id, tableid, metric, distance, flags);
+	}	
 
 	/* Set values in ctx. Note that vrf is not set, because we can only
 	 * resolve the FRR vrf info in the main pthread.

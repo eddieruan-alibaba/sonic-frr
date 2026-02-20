@@ -2166,6 +2166,11 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 	}
 
 	seq = dplane_ctx_get_seq(ctx);
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
+		zlog_debug(
+			"%s(%u:%u):%pRN Matched dplane result to re %p, old_re %p, seq %u, old_re->dplane_sequence %u, ctx old seq %u",
+			VRF_LOGNAME(vrf), dplane_ctx_get_vrf(ctx),
+			dplane_ctx_get_table(ctx), rn, re, old_re, seq, old_re?old_re->dplane_sequence:0, dplane_ctx_get_old_seq(ctx));
 
 	/*
 	 * Check sequence number(s) to detect stale results before continuing
@@ -2205,10 +2210,10 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 		if (old_re->dplane_sequence != dplane_ctx_get_old_seq(ctx)) {
 			if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
 				zlog_debug(
-					"%s(%u:%u):%pRN Stale dplane result for old_re %p",
+					"%s(%u:%u):%pRN Stale dplane result for old_re %p, old seq %u, ctx old seq %u",
 					VRF_LOGNAME(vrf),
 					dplane_ctx_get_vrf(ctx), old_re->table,
-					rn, old_re);
+					rn, old_re, old_re->dplane_sequence, dplane_ctx_get_old_seq(ctx));
 		} else
 			UNSET_FLAG(old_re->status, ROUTE_ENTRY_QUEUED);
 	}
