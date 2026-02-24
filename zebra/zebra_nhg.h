@@ -177,6 +177,13 @@ struct nhg_hash_entry {
  * chooses this NHG then we can install it then.
  */
 #define NEXTHOP_GROUP_INITIAL_DELAY_INSTALL (1 << 9)
+
+/*
+ * RIB/FIB will pass down nhe_received nexthop group
+ * to FPM to construct FIB. So we set this flag to
+ * recognize and install it whether it's resolved or not.
+ */
+#define NEXTHOP_GROUP_RECEIVED (1 << 10)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */

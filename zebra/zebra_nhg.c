@@ -3698,8 +3698,9 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 {
 	struct nhg_connected *rb_node_dep = NULL;
 
-	/* Resolve it first */
-	nhe = zebra_nhg_resolve(nhe);
+	/* Resolve it first if it's not received nhe */
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED))
+		nhe = zebra_nhg_resolve(nhe);
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)

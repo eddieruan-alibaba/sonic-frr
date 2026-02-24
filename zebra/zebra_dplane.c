@@ -147,6 +147,7 @@ struct dplane_route_info {
 
 	/* Nexthop hash entry info */
 	struct dplane_nexthop_info nhe;
+	struct dplane_nexthop_info nhe_received;
 
 	/* Nexthops */
 	uint32_t zd_nhg_id;
@@ -2329,6 +2330,12 @@ uint32_t dplane_ctx_get_old_nhe_id(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.old_id;
 }
 
+uint32_t dplane_ctx_get_nhe_received_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe_received.id;
+}
+
 afi_t dplane_ctx_get_nhe_afi(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
@@ -3637,6 +3644,11 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 
 		ctx->u.rinfo.nhe.id = nhe->id;
 		ctx->u.rinfo.nhe.old_id = 0;
+
+		if (re->nhe_received) {
+			ctx->u.rinfo.nhe_received.id = re->nhe_received->id;
+			ctx->u.rinfo.nhe_received.old_id = 0;
+		}
 		/*
 		 * Check if the nhe is installed/queued before doing anything
 		 * with this route.
@@ -4398,6 +4410,8 @@ dplane_route_update_internal(struct route_node *rn,
 			ctx->u.rinfo.zd_old_distance = old_re->distance;
 			ctx->u.rinfo.zd_old_metric = old_re->metric;
 			ctx->u.rinfo.nhe.old_id = old_re->nhe->id;
+			if (old_re->nhe_received)
+				ctx->u.rinfo.nhe_received.old_id = old_re->nhe_received->id;
 
 #ifndef HAVE_NETLINK
 			/* For bsd, capture previous re's nexthops too, sigh.

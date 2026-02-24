@@ -477,6 +477,7 @@ static void route_entry_attach_ref(struct route_entry *re,
 static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_hash_entry *nhe)
 {
 	re->nhe_received = nhe;
+	SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
 	zebra_nhg_increment_ref(nhe);
 }
 
@@ -659,6 +660,7 @@ void rib_install_kernel(struct route_node *rn, struct route_entry *re,
 	 * Install the resolved nexthop object first.
 	 */
 	zebra_nhg_install_kernel(re->nhe, re->type);
+	zebra_nhg_install_kernel(re->nhe_received, re->type);
 
 	/*
 	 * If this is a replace to a new RE let the originator of the RE
