@@ -3699,8 +3699,16 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 	struct nhg_connected *rb_node_dep = NULL;
 
 	/* Resolve it first if it's not received nhe */
-	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED))
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: resolving nhg %pNG before install since it is not received",
+				   __func__, nhe);
 		nhe = zebra_nhg_resolve(nhe);
+	} else {
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: nhg %pNG is received, no need to resolve before install",
+				   __func__, nhe);
+	}
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)

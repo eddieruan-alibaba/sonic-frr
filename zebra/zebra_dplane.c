@@ -4647,6 +4647,11 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		 __func__, nhe->id, op, nhe->flags,
 		 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL));
 
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL) {
+		zlog_debug("%s: [DISPATCH] NHG id=%u, op=%d, flags=0x%x, INITIAL_DELAY=%d",
+			 __func__, nhe->id, op, nhe->flags,
+			 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL));
+
 	/* Obtain context block */
 	ctx = dplane_ctx_alloc();
 
@@ -4690,6 +4695,10 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 			dplane_ctx_free(&ctx);
 	}
 
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL) {
+		zlog_debug("%s: [End of DISPATCH] NHG id=%u, op=%d, flags=0x%x, INITIAL_DELAY=%d, result=%d",
+			 __func__, nhe->id, op, nhe->flags,
+			 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL), result);
 	return result;
 }
 
