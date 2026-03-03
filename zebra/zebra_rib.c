@@ -514,19 +514,11 @@ done:
 	/* Detach / deref previous nhg */
 
 	if (old_nhg) {
-		if (re->nhe_received == old_nhg) {
-			zebra_nhg_decrement_ref(old_nhg);
-		}
-		if (new_nhghe)
-			zebra_nhg_increment_ref(new_nhghe);
-
 
 		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
-			zlog_debug("%s: re (%p) replace nhe_received from %p, to %p ",
-			   __func__, re, re->nhe_received, new_nhghe);
+			zlog_debug("%s: re (%p) dereference old_nhg  %p, (%pNG) skip updating nhe_received %p (%pNG)",
+				   __func__, re, old_nhg, old_nhg, re->nhe_received, re->nhe_received);
 		}
-		re->nhe_received = new_nhghe;
-		SET_FLAG(new_nhghe->flags, NEXTHOP_GROUP_RECEIVED);
 		/*
 		 * Return true if we are deleting the previous NHE
 		 * Note: we dont check the return value of the function anywhere
@@ -2858,8 +2850,8 @@ static void process_subq_early_route_add(struct zebra_early_route *ere)
 	 * level protocols, as the refcnt might be wrong, since it checks
 	 * if old_id != new_id.
 	 */
-	route_entry_update_nhe(re, nhe);
 	route_entry_update_original_nhe(re, nhe);
+	route_entry_update_nhe(re, nhe);
 
 	/* Make it sure prefixlen is applied to the prefix. */
 	apply_mask(&ere->p);
