@@ -3694,8 +3694,11 @@ uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
 	return zebra_nhg_nhe2grp_full_internal(grp_full, 0, nhe, nhe, max_num);
 }
 
+/* Mark receive flag and valid flag for a given NHE and its dependents */
 void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe)
 {
+	struct nhg_connected *rb_node_dep = NULL;
+
 	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
 		/* Mark the nexthop group as received  and valid together*/
 		SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
