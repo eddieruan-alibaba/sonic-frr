@@ -477,7 +477,8 @@ static void route_entry_attach_ref(struct route_entry *re,
 static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_hash_entry *nhe)
 {
 	re->nhe_received = nhe;
-	SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
+	zebra_nhg_mark_received_flag(nhe);
+
 	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
 		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ",
 			   __func__, re, nhe, nhe);

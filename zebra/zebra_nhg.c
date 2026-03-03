@@ -3694,6 +3694,21 @@ uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
 	return zebra_nhg_nhe2grp_full_internal(grp_full, 0, nhe, nhe, max_num);
 }
 
+void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe)
+{
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+		/* Mark the nexthop group as received  and valid together*/
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_VALID);
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: Marking nhg %pNG as received", __func__, nhe);
+	}
+	/* Make sure all depends are marked as well*/
+	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+		zebra_nhg_mark_received_flag(rb_node_dep->nhe);
+	}
+}
+
 void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 {
 	struct nhg_connected *rb_node_dep = NULL;

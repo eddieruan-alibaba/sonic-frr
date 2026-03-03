@@ -399,6 +399,9 @@ extern void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type);
 extern void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe);
 extern void zebra_interface_nhg_reinstall(struct interface *ifp);
 
+/* Mark the received flag for a nexthop group */
+void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe)
+
 /* Forward ref of dplane update context type */
 struct zebra_dplane_ctx;
 extern void zebra_nhg_dplane_result(struct zebra_dplane_ctx *ctx);
