@@ -479,8 +479,8 @@ static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_h
 	re->nhe_received = nhe;
 	SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
 	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
-		zlog_debug("%s: re (%p) set nhe_received %p, id ",
-			   __func__, re, nhe, nhe->id);
+		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ",
+			   __func__, re, nhe, nhe);
 	}
 	zebra_nhg_increment_ref(nhe);
 }
@@ -520,13 +520,13 @@ done:
 		if (new_nhghe)
 			zebra_nhg_increment_ref(new_nhghe);
 
+
+		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
+			zlog_debug("%s: re (%p) replace nhe_received from %p, (%pNG) to %p, (%pNG) ",
+			   __func__, re, re->nhe_received, re->nhe_received, new_nhghe, new_nhghe);
+		}
 		re->nhe_received = new_nhghe;
 		SET_FLAG(new_nhghe->flags, NEXTHOP_GROUP_RECEIVED);
-		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
-			zlog_debug("%s: re (%p) replace nhe_received %p, id ",
-			   __func__, re, new_nhghe, new_nhghe->id);
-		}
-	}
 		/*
 		 * Return true if we are deleting the previous NHE
 		 * Note: we dont check the return value of the function anywhere
@@ -2742,11 +2742,11 @@ static void rib_re_nhg_free(struct route_entry *re)
 	nexthops_free(re->fib_ng.nexthop);
 
 	if (re->nhe_received) {
-		zebra_nhg_decrement_ref(re->nhe_received);
 		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
-			zlog_debug("%s: re (%p) clear nhe_received %p, id ",
-				   __func__, re, re->nhe_received, re->nhe_received->id);
+			zlog_debug("%s: re (%p) clear nhe_received %p, (%pNG) ",
+				   __func__, re, re->nhe_received, re->nhe_received);
 		}
+		zebra_nhg_decrement_ref(re->nhe_received);
 		re->nhe_received = NULL;
 	}
 }
