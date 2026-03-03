@@ -522,8 +522,8 @@ done:
 
 
 		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
-			zlog_debug("%s: re (%p) replace nhe_received from %p, (%pNG) to %p, (%pNG) ",
-			   __func__, re, re->nhe_received, re->nhe_received, new_nhghe, new_nhghe);
+			zlog_debug("%s: re (%p) replace nhe_received from %p, to %p ",
+			   __func__, re, re->nhe_received, new_nhghe);
 		}
 		re->nhe_received = new_nhghe;
 		SET_FLAG(new_nhghe->flags, NEXTHOP_GROUP_RECEIVED);
