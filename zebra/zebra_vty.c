@@ -1090,6 +1090,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		json_object_string_add(json, "type",
 				       zebra_route_string(nhe->type));
 		json_object_int_add(json, "refCount", nhe->refcnt);
+		json_object_int_add(json, "flags", nhe->flags);
 		if (event_is_scheduled(nhe->timer))
 			json_object_string_add(
 				json, "timeToDeletion",
@@ -1106,6 +1107,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 		vty_out(vty, "ID: %u (%s)\n", nhe->id,
 			zebra_route_string(nhe->type));
 		vty_out(vty, "     RefCnt: %u", nhe->refcnt);
+		vty_out(vty, "     Flags: 0x%x", nhe->flags);
 		if (event_is_scheduled(nhe->timer))
 			vty_out(vty, " Time to Deletion: %s",
 				event_timer_to_hhmmss(time_left,

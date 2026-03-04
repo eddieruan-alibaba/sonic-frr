@@ -3824,6 +3824,17 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 			 __func__, nhe->id);
 	}
 
+	/*
+	 * If this nexthop group is marked as received, then we should not
+	 * program it to the kernel, since it is unresolved nexthop group.
+	 */
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+		dplane_ctx_set_skip_kernel(ctx);
+		if (IS_ZEBRA_DEBUG_DPLANE_DETAIL) {
+			zlog_debug("%s: NHG id=%u is received, marking to skip kernel programming",
+			   __func__, nhe->id);
+		}
+	}
 	zvrf = vrf_info_lookup(nhe->vrf_id);
 
 	/*

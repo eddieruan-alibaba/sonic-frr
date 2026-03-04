@@ -3694,13 +3694,51 @@ uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
 	return zebra_nhg_nhe2grp_full_internal(grp_full, 0, nhe, nhe, max_num);
 }
 
+/*
+ * Mark receive flag and valid flag for a given NHE and its dependents 
+ */
+void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe)
+{
+	struct nhg_connected *rb_node_dep = NULL;
+
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+		/*
+		 * Mark the nexthop group as received  and valid together
+		 *
+		 * Valid flag is used to indicate whether this nexthop group is valid for use for dplane.
+		 * It is set together with received flag since this NHG's contents are received from
+		 * protocol clients and would not be updated in zebra.
+		 */
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED);
+		SET_FLAG(nhe->flags, NEXTHOP_GROUP_VALID);
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: Marking nhg %pNG as received", __func__, nhe);
+	}
+	/* Make sure all depends are marked as well*/
+	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+		zebra_nhg_mark_received_flag(rb_node_dep->nhe);
+	}
+}
+
 void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 {
 	struct nhg_connected *rb_node_dep = NULL;
 
-	/* Resolve it first if it's not received nhe */
-	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED))
+	/*
+	 * Resolve it first if it's not received nhe
+	 * Received nhe 's contents are from protocol clients and would not be updated in zebra, so we
+	 * can skip resolve for them. Some dplane needs this original contents.
+	 */
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: resolving nhg %pNG before install since it is not marked as received",
+				   __func__, nhe);
 		nhe = zebra_nhg_resolve(nhe);
+	} else {
+		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+			zlog_debug("%s: nhg %pNG is not needed to resolve before install since it is marked as received",
+				   __func__, nhe);
+	}
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
