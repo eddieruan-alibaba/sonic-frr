@@ -622,6 +622,7 @@ uint32_t dplane_ctx_get_nhe_received_id(const struct zebra_dplane_ctx *ctx);
 afi_t dplane_ctx_get_nhe_afi(const struct zebra_dplane_ctx *ctx);
 vrf_id_t dplane_ctx_get_nhe_vrf_id(const struct zebra_dplane_ctx *ctx);
 int dplane_ctx_get_nhe_type(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_nhg_flags(const struct zebra_dplane_ctx *ctx);
 const struct nexthop_group *
 dplane_ctx_get_nhe_ng(const struct zebra_dplane_ctx *ctx);
 const struct nh_grp *

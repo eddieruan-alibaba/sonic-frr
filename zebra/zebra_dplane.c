@@ -87,6 +87,7 @@ struct dplane_nexthop_info {
 	afi_t afi;
 	vrf_id_t vrf_id;
 	int type;
+	uint32_t nhg_flags;
 
 	struct nexthop_group ng;
 	struct nh_grp nh_grp[MULTIPATH_NUM];
@@ -2354,6 +2355,12 @@ int dplane_ctx_get_nhe_type(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.type;
 }
 
+uint32_t dplane_ctx_get_nhe_nhg_flags(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nhg_flags;
+}
+
 const struct nexthop_group *
 dplane_ctx_get_nhe_ng(const struct zebra_dplane_ctx *ctx)
 {
@@ -3793,6 +3800,7 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	ctx->u.rinfo.nhe.afi = nhe->afi;
 	ctx->u.rinfo.nhe.vrf_id = nhe->vrf_id;
 	ctx->u.rinfo.nhe.type = nhe->type;
+	ctx->u.rinfo.nhe.nhg_flags = nhe->flags;
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
 
