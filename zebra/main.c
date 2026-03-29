@@ -66,6 +66,9 @@ struct mgmt_be_client *mgmt_be_client;
 /* Route retain mode flag. */
 int retain_mode = 0;
 
+/* Enable NHG Full encoding via sonic-fib (set by --nhg-fib flag). */
+bool zebra_nhg_fib_enabled = false;
+
 /* Receive buffer size for kernel control sockets */
 #define RCVBUFSIZE_MIN 4194304
 #ifdef HAVE_NETLINK
@@ -79,6 +82,7 @@ uint32_t rt_table_main_id = RT_TABLE_MAIN;
 #define OPTION_V6_RR_SEMANTICS 2000
 #define OPTION_ASIC_OFFLOAD    2001
 #define OPTION_V6_WITH_V4_NEXTHOP 2002
+#define OPTION_NHG_FIB         2003
 
 /* Command line options. */
 const struct option longopts[] = {
@@ -89,6 +93,7 @@ const struct option longopts[] = {
 	{ "retain", no_argument, NULL, 'r' },
 	{ "asic-offload", optional_argument, NULL, OPTION_ASIC_OFFLOAD },
 	{ "v6-with-v4-nexthops", no_argument, NULL, OPTION_V6_WITH_V4_NEXTHOP },
+	{ "nhg-fib", no_argument, NULL, OPTION_NHG_FIB },
 #ifdef HAVE_NETLINK
 	{ "vrfwnetns", no_argument, NULL, 'n' },
 	{ "nl-bufsize", required_argument, NULL, 's' },
@@ -384,7 +389,8 @@ int main(int argc, char **argv)
 #else
 		    "  -s,                       Set kernel socket receive buffer size\n"
 #endif /* HAVE_NETLINK */
-		    "  -R, --routing-table       Set kernel routing table\n");
+		    "  -R, --routing-table       Set kernel routing table\n"
+		    "      --nhg-fib             Enable NHG Full encoding via sonic-fib\n");
 
 	while (1) {
 		int opt = frr_getopt(argc, argv, NULL);
@@ -456,6 +462,9 @@ int main(int argc, char **argv)
 			break;
 		case OPTION_V6_WITH_V4_NEXTHOP:
 			v6_with_v4_nexthop = true;
+			break;
+		case OPTION_NHG_FIB:
+			zebra_nhg_fib_enabled = true;
 			break;
 #endif /* HAVE_NETLINK */
 		default:
