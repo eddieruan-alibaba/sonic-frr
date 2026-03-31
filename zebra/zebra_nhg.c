@@ -34,6 +34,9 @@ DEFINE_MTYPE_STATIC(ZEBRA, NHG, "Nexthop Group Entry");
 DEFINE_MTYPE_STATIC(ZEBRA, NHG_CONNECTED, "Nexthop Group Connected");
 DEFINE_MTYPE_STATIC(ZEBRA, NHG_CTX, "Nexthop Group Context");
 
+/* Global flag set by zebra --nhg-fib command-line option. */
+extern bool zebra_nhg_fib_enabled;
+
 /* Map backup nexthop indices between two nhes */
 struct backup_nh_map_s {
 	int map_count;
@@ -3731,8 +3734,12 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 	 * Resolve it first if it's not received nhe
 	 * Received nhe 's contents are from protocol clients and would not be updated in zebra, so we
 	 * can skip resolve for them. Some dplane needs this original contents.
+	 * When nhg_fib is enabled, also skip resolve for recursive NHGs so they are sent to FPM
+	 * as-is (with their recursive nexthop address) for backwalk support.
 	 */
-	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED)) {
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED) &&
+	    !(zebra_nhg_fib_enabled &&
+	      CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))) {
 		if (IS_ZEBRA_DEBUG_NHG_DETAIL)
 			zlog_debug("%s: resolving nhg %pNG before install since it is not marked as received",
 				   __func__, nhe);
