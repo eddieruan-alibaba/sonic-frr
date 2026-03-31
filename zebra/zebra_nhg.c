@@ -3538,12 +3538,15 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			continue;
 		}
 
-		/* If it's neither installed nor queued for a normal case, skip (same logic as zebra_nhg_nhe2grp_internal) */
+		/* Recursive NHGs are never installed to kernel, only require VALID.
+		 * Non-recursive (leaf) NHGs must be INSTALLED or QUEUED to be included.
+		 */
 		if (!is_srv6_nhg(curr_node)
+		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_RECURSIVE)
 		    && !(CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED) ||
 		         CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)))
 		{
-			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED and not QUEUED (normal case) - dependency not ready",
+			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED and not QUEUED (normal leaf case) - dependency not ready",
 				 __func__, curr_node->id);
 			if (IS_ZEBRA_DEBUG_RIB_DETAILED
 			    || IS_ZEBRA_DEBUG_NHG)
