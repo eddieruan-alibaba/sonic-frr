@@ -3583,16 +3583,18 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 				/* Count how many sub-depends this node has */
 				zlog_err("%s:       counting sub-depends of id=%u:", __func__, curr_node->id);
 				frr_each(nhg_connected_tree, &curr_node->nhg_depends, sub_rb_node) {
-					/* Apply same filters as main loop */
+					/* Apply same filters as main loop: RECURSIVE only requires VALID */
 					if (!is_srv6_nhg(sub_rb_node->nhe)
 					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_VALID)) {
 						zlog_err("%s:         sub-depend id=%u SKIP: not VALID",
 							 __func__, sub_rb_node->nhe->id);
 						continue;
 					}
+					/* Recursive sub-depends only need VALID */
 					if (!is_srv6_nhg(sub_rb_node->nhe)
+					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_RECURSIVE)
 					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
-						zlog_err("%s:         sub-depend id=%u SKIP: not INSTALLED",
+						zlog_err("%s:         sub-depend id=%u SKIP: not INSTALLED (normal leaf case)",
 							 __func__, sub_rb_node->nhe->id);
 						continue;
 					}
