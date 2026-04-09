@@ -3830,6 +3830,30 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 			ctx->u.rinfo.nhe.nh_grp_full, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION);
 		zlog_err("%s: NHG id=%u full grp_full_count=%u",
 			 __func__, nhe->id, ctx->u.rinfo.nhe.nh_grp_full_count);
+		
+		/* Fill depends array with direct depends IDs */
+		ctx->u.rinfo.nhe.depends_count = 0;
+		struct nhg_connected *rb_node_dep = NULL;
+		frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+			if (ctx->u.rinfo.nhe.depends_count < array_size(ctx->u.rinfo.nhe.depends)) {
+				ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] = rb_node_dep->nhe->id;
+				ctx->u.rinfo.nhe.depends_count++;
+			}
+		}
+		zlog_err("%s: NHG id=%u depends_count=%u",
+			 __func__, nhe->id, ctx->u.rinfo.nhe.depends_count);
+		
+		/* Fill dependents array with dependent IDs */
+		ctx->u.rinfo.nhe.dependents_count = 0;
+		struct nhg_connected *rb_node_dependent = NULL;
+		frr_each(nhg_connected_tree, &nhe->nhg_dependents, rb_node_dependent) {
+			if (ctx->u.rinfo.nhe.dependents_count < array_size(ctx->u.rinfo.nhe.dependents)) {
+				ctx->u.rinfo.nhe.dependents[ctx->u.rinfo.nhe.dependents_count] = rb_node_dependent->nhe->id;
+				ctx->u.rinfo.nhe.dependents_count++;
+			}
+		}
+		zlog_err("%s: NHG id=%u dependents_count=%u",
+			 __func__, nhe->id, ctx->u.rinfo.nhe.dependents_count);
 	} else {
 		zlog_err("%s: NHG id=%u is singleton or recursive, skip compression",
 			 __func__, nhe->id);
