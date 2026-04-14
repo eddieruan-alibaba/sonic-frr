@@ -158,6 +158,7 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 	if (remove) {
 		removed_nhe = remove->nhe;
 		nhg_connected_free(remove);
+		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL);
 		return removed_nhe;
 	}
 
@@ -178,8 +179,10 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 	/* On success, NULL will be returned from the
 	 * RB code.
 	 */
-	if (new && (nhg_connected_tree_add(head, new) == NULL))
+	if (new && (nhg_connected_tree_add(head, new) == NULL)) {
+		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL);
 		return NULL;
+	}
 
 	/* If it wasn't successful, it must be a duplicate. We enforce the
 	 * unique property for the `nhg_connected` tree.
