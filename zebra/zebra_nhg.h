@@ -184,6 +184,11 @@ struct nhg_hash_entry {
  * recognize and install it whether it's resolved or not.
  */
 #define NEXTHOP_GROUP_RECEIVED (1 << 10)
+
+/*
+ * Reinstall NHG to FPM Only
+ */
+#define NEXTHOP_GROUP_REINSTALL_FPM_ONLY (1 << 11)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */

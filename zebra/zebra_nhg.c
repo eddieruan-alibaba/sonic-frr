@@ -158,7 +158,7 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 	if (remove) {
 		removed_nhe = remove->nhe;
 		nhg_connected_free(remove);
-		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL);
+		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		return removed_nhe;
 	}
 
@@ -180,7 +180,7 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 	 * RB code.
 	 */
 	if (new && (nhg_connected_tree_add(head, new) == NULL)) {
-		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL);
+		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		return NULL;
 	}
 
@@ -3577,12 +3577,12 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			/* This is a group within a group */
 			zlog_err("%s:     SUB-GROUP: depend id=%u has sub-depends",
 				 __func__, curr_node->id);
-			
+
 			/* First, write the depend node itself with num_direct */
 			if (i < max_num) {
 				uint32_t sub_depend_count = 0;
 				struct nhg_connected *sub_rb_node = NULL;
-				
+
 				/* Count how many sub-depends this node has */
 				zlog_err("%s:       counting sub-depends of id=%u:", __func__, curr_node->id);
 				frr_each(nhg_connected_tree, &curr_node->nhg_depends, sub_rb_node) {
@@ -3606,7 +3606,7 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 					sub_depend_count++;
 				}
 				zlog_err("%s:       total valid sub-depends: %u", __func__, sub_depend_count);
-				
+
 				grp_full[i].id = curr_node->id;
 				grp_full[i].weight = 0;  /* group nodes have weight 0 */
 				grp_full[i].num_direct = sub_depend_count;
@@ -3614,7 +3614,7 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 					 __func__, i, curr_node->id, sub_depend_count);
 				i++;
 			}
-			
+
 			/* Then, recursively write its sub-depends */
 			zlog_err("%s:       RECURSE: entering sub-group id=%u",
 				 __func__, curr_node->id);
@@ -3630,7 +3630,7 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			bool found = false;
 			zlog_err("%s:     LEAF: processing leaf node id=%u",
 				 __func__, curr_node->id);
-			
+
 			for (ALL_NEXTHOPS_PTR(&original->nhg, nexthop)) {
 				if (CHECK_FLAG(nexthop->flags,
 					       NEXTHOP_FLAG_RECURSIVE))
@@ -3682,7 +3682,7 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 done:
 	zlog_err("%s: [EXIT] nhe=%u, return i=%u",
 		 __func__, nhe->id, i);
-	
+
 	/* ========== DEBUG: Dump final array ========== */
 	zlog_err("%s: dumping grp_full array from [%u] to [%u]:",
 		 __func__, curr_index, i > 0 ? i - 1 : 0);
@@ -3693,7 +3693,7 @@ done:
 			 grp_full[idx].weight,
 			 grp_full[idx].num_direct);
 	}
-	
+
 	return i;
 }
 
@@ -3706,7 +3706,7 @@ uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
 }
 
 /*
- * Mark receive flag and valid flag for a given NHE and its dependents 
+ * Mark receive flag and valid flag for a given NHE and its dependents
  */
 void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe)
 {
@@ -3775,7 +3775,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID) &&
 	    (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL)) &&
+	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL) ||
+	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM)) &&
 	    !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)) {
 		/* Change its type to us since we are installing it */
 		if (!ZEBRA_NHG_CREATED(nhe))
