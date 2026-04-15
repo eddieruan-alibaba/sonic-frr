@@ -159,6 +159,8 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 		removed_nhe = remove->nhe;
 		nhg_connected_free(remove);
 		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+		zlog_err("%s: NHG id=%u, %p, count=%u",
+			 __func__, depend->id, depend, nhg_connected_tree_count(head));
 		return removed_nhe;
 	}
 
@@ -181,6 +183,8 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 	 */
 	if (new && (nhg_connected_tree_add(head, new) == NULL)) {
 		SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+		zlog_err("%s: NHG id=%u, %p, count=%u",
+			 __func__, depend->id, depend, nhg_connected_tree_count(head));
 		return NULL;
 	}
 

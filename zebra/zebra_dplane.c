@@ -3854,8 +3854,8 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 			ctx->u.rinfo.nhe.dependents_count++;
 		}
 	}
-	zlog_err("%s: NHG id=%u dependents_count=%u",
-			 __func__, nhe->id, ctx->u.rinfo.nhe.dependents_count);
+	zlog_err("%s: NHG id=%u, %p, dependents_count=%u",
+			 __func__, nhe->id, nhe, ctx->u.rinfo.nhe.dependents_count);
 
 	/*
 	 * If this nexthop group is marked as received, then we should not
@@ -4729,6 +4729,11 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		result = ZEBRA_DPLANE_REQUEST_QUEUED;
 		zlog_err("%s: NHG id=%u enqueued successfully",
 			 __func__, nhe->id);
+		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
+			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+			zlog_err("%s: NHG id=%u clear NEXTHOP_GROUP_REINSTALL_FPM_ONLY flag",
+			 		__func__, nhe->id);
+		}
 	} else {
 		zlog_err("%s: NHG id=%u enqueue FAILED, ret=%d",
 			 __func__, nhe->id, ret);
