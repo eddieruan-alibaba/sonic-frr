@@ -3814,13 +3814,14 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE));
 
 	/*
-	 * If this is a group, convert it to a grp array of ids
-	 * If zebra_nhg_fib_enabled  is not true, we will skip recursive case.
-	 * If zebra_nhg_fib_enabled  is true, we need to handle recursive case for dplane's FIB
-	 * convergance handling.
+	 * If this is a group, convert it to a grp array of ids with the following conditions:
+	 *   case 1: If zebra_nhg_fib_enabled  is not true, we will skip recursive case.
+	 *   case 2: If zebra_nhg_fib_enabled  is true, we need to handle all NHGs including
+	 *           recursive case for dplane's FIB convergance handling.
 	 */
-	if (!zebra_nhg_depends_is_empty(nhe)
-        && (!zebra_nhg_fib_enabled && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))) {
+	if (!zebra_nhg_depends_is_empty(nhe) &&
+		(zebra_nhg_fib_enabled ||
+		(!zebra_nhg_fib_enabled && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)))) {
 		zlog_err("%s: NHG id=%u is a group, calling compression functions",
 			 __func__, nhe->id);
 
@@ -4726,7 +4727,7 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
 			/* No Need to program kernel */
-			//dplane_ctx_set_skip_kernel(ctx);
+			dplane_ctx_set_skip_kernel(ctx);
 		}
 		zlog_err("%s: NHG id=%u enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
 			 __func__, nhe->id,
@@ -4743,11 +4744,6 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		result = ZEBRA_DPLANE_REQUEST_QUEUED;
 		zlog_err("%s: NHG id=%u enqueued successfully",
 			 __func__, nhe->id);
-		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
-			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
-			zlog_err("%s: NHG id=%u clear NEXTHOP_GROUP_REINSTALL_FPM_ONLY flag",
-			 		__func__, nhe->id);
-		}
 	} else {
 		zlog_err("%s: NHG id=%u enqueue FAILED, ret=%d",
 			 __func__, nhe->id, ret);
