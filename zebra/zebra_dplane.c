@@ -3813,9 +3813,15 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		 zebra_nhg_depends_is_empty(nhe),
 		 CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE));
 
-	/* If this is a group, convert it to a grp array of ids */
-	if (!zebra_nhg_depends_is_empty(nhe)
-	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
+	/*
+	 * If this is a group, convert it to a grp array of ids with the following conditions:
+	 *   case 1: If zebra_nhg_fib_enabled  is not true, we will skip recursive case.
+	 *   case 2: If zebra_nhg_fib_enabled  is true, we need to handle all NHGs including
+	 *           recursive case for dplane's FIB convergance handling.
+	 */
+	if (!zebra_nhg_depends_is_empty(nhe) &&
+		(zebra_nhg_fib_enabled ||
+		(!zebra_nhg_fib_enabled && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)))) {
 		zlog_err("%s: NHG id=%u is a group, calling compression functions",
 			 __func__, nhe->id);
 
@@ -3830,19 +3836,26 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 			ctx->u.rinfo.nhe.nh_grp_full, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION);
 		zlog_err("%s: NHG id=%u full grp_full_count=%u",
 			 __func__, nhe->id, ctx->u.rinfo.nhe.nh_grp_full_count);
-		
-		/* Fill depends array with direct depends IDs */
-		ctx->u.rinfo.nhe.depends_count = 0;
-		struct nhg_connected *rb_node_dep = NULL;
-		frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-			if (ctx->u.rinfo.nhe.depends_count < array_size(ctx->u.rinfo.nhe.depends)) {
-				ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] = rb_node_dep->nhe->id;
-				ctx->u.rinfo.nhe.depends_count++;
+
+		if (zebra_nhg_fib_enabled) {
+			/* Fill depends array with direct depends IDs */
+			ctx->u.rinfo.nhe.depends_count = 0;
+			struct nhg_connected *rb_node_dep = NULL;
+			frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+				if (ctx->u.rinfo.nhe.depends_count < array_size(ctx->u.rinfo.nhe.depends)) {
+					ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] = rb_node_dep->nhe->id;
+					ctx->u.rinfo.nhe.depends_count++;
+				}
 			}
+			zlog_err("%s: NHG id=%u depends_count=%u",
+				__func__, nhe->id, ctx->u.rinfo.nhe.depends_count);
 		}
-		zlog_err("%s: NHG id=%u depends_count=%u",
-			 __func__, nhe->id, ctx->u.rinfo.nhe.depends_count);
-		
+	} else {
+		zlog_err("%s: NHG id=%u is singleton or recursive, skip compression",
+			 __func__, nhe->id);
+	}
+
+	if (zebra_nhg_fib_enabled) {
 		/* Fill dependents array with dependent IDs */
 		ctx->u.rinfo.nhe.dependents_count = 0;
 		struct nhg_connected *rb_node_dependent = NULL;
@@ -3852,11 +3865,8 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 				ctx->u.rinfo.nhe.dependents_count++;
 			}
 		}
-		zlog_err("%s: NHG id=%u dependents_count=%u",
-			 __func__, nhe->id, ctx->u.rinfo.nhe.dependents_count);
-	} else {
-		zlog_err("%s: NHG id=%u is singleton or recursive, skip compression",
-			 __func__, nhe->id);
+		zlog_err("%s: NHG id=%u, %p, dependents_count=%u",
+				__func__, nhe->id, nhe, ctx->u.rinfo.nhe.dependents_count);
 	}
 
 	/*
@@ -4715,7 +4725,10 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
-
+		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
+			/* No Need to program kernel */
+			dplane_ctx_set_skip_kernel(ctx);
+		}
 		zlog_err("%s: NHG id=%u enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
 			 __func__, nhe->id,
 			 ctx->u.rinfo.nhe.nh_grp_count,
