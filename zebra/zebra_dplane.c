@@ -4726,7 +4726,7 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
 			/* No Need to program kernel */
-			dplane_ctx_set_skip_kernel(ctx);
+			//dplane_ctx_set_skip_kernel(ctx);
 		}
 		zlog_err("%s: NHG id=%u enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
 			 __func__, nhe->id,
