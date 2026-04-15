@@ -160,9 +160,9 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 		nhg_connected_free(remove);
 		/*
 		 * If nhg fib is enabled, we need to reinstall this nhg due to depends or dependents information
-		 * is updated
+		 * is updated.
 		 */
-		if (zebra_nhg_fib_enabled && CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
+		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED)) {
 			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		}
 		return removed_nhe;
@@ -190,7 +190,7 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 		 * If nhg fib is enabled, we need to reinstall this nhg due to depends or dependents information
 		 * is updated
 		 */
-		if (zebra_nhg_fib_enabled && CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
+		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED)) {
 			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		}
 		return NULL;
