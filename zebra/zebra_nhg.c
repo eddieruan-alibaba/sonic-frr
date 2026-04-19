@@ -164,6 +164,8 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 		 */
 		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED)) {
 			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+			zlog_err("%s: NHG id=%u set NEXTHOP_GROUP_REINSTALL_FPM_ONLY flag, flags=0x%x, head %p, count=%d",
+				 __func__, depend->id, depend->flags, head, nhg_connected_tree_count(head));
 		}
 		return removed_nhe;
 	}
@@ -192,6 +194,8 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 		 */
 		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED)) {
 			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+			zlog_err("%s: NHG id=%u set NEXTHOP_GROUP_REINSTALL_FPM_ONLY flag, flags=0x%x, head=%p count=%d",
+				 __func__, depend->id, depend->flags, head, nhg_connected_tree_count(head));
 		}
 		return NULL;
 	}
