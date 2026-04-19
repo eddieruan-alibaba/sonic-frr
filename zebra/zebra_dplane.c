@@ -4726,11 +4726,15 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
-			/* No Need to program kernel */
-			dplane_ctx_set_skip_kernel(ctx);
+			/* No Need to program kernel if it has been installed */
+			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
+				dplane_ctx_set_skip_kernel(ctx);
+			}
+			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		}
-		zlog_err("%s: NHG id=%u enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
-			 __func__, nhe->id,
+
+		zlog_err("%s: NHG id=%u flags=0x%x enqueuing to dplane, nh_grp_count=%u, nh_grp_full_count=%u",
+			 __func__, nhe->id, nhe->flags,
 			 ctx->u.rinfo.nhe.nh_grp_count,
 			 ctx->u.rinfo.nhe.nh_grp_full_count);
 		ret = dplane_update_enqueue(ctx);
