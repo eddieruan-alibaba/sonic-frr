@@ -659,6 +659,23 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 {
 	int state_changed = 0;
 
+	int nhg_id = 0;
+	#define MSG_BUF_SIZE 500
+
+    char pfx_buf[PREFIX2STR_BUFFER];
+	char msg_buf[MSG_BUF_SIZE];
+	char msg_buf2[MSG_BUF_SIZE];
+
+
+	if (rnh && rnh->state) {
+		nhg_id = rnh->state->nhe_id;
+	}
+	snprintf(msg_buf, sizeof(msg_buf),
+         " Previous resolved via %s, prefix %s id %d",
+         zebra_route_string(rnh->state->type),
+         prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf)), nhg_id);
+
+
 	/* If we're resolving over a different route, resolution has changed or
 	 * the resolving route has some change (e.g., metric), there is a state
 	 * change.
@@ -684,6 +701,19 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		copy_state(rnh, re, nrn);
 		state_changed = 1;
 	}
+
+	if (rnh && rnh->state) {
+		nhg_id = rnh->state->nhe_id;
+	}
+	snprintf(msg_buf2, sizeof(msg_buf2),
+         " Current resolved via %s, prefix %s id %d",
+         zebra_route_string(rnh->state->type),
+         prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf)), nhg_id);
+
+	zlog_err("DEBUGME: in zebra_rnh_eval_nexthop_entry %s(%u):%pRN: state_changed %d, %s vs %s",
+			   VRF_LOGNAME(zvrf->vrf), zvrf->vrf->vrf_id, nrn,
+			   state_changed, msg_buf, msg_buf2);
+
 	zebra_rnh_store_in_routing_table(rnh);
 
 	if (state_changed || force) {
