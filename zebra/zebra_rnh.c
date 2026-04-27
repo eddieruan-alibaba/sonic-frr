@@ -668,7 +668,8 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 
 
 	if (rnh && rnh->state) {
-		nhg_id = rnh->state->nhe_id;
+		if (rnh->state->nhe)
+			nhg_id = rnh->state->nhe->id;
 		prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf));
 		snprintf(msg_buf, sizeof(msg_buf),
          " Previous resolved prefix %s id %d ",
@@ -708,7 +709,8 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	}
 
 	if (rnh && rnh->state) {
-		nhg_id = rnh->state->nhe_id;
+		if (rnh->state->nhe)
+			nhg_id = rnh->state->nhe->id;
 		prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf));
 		snprintf(msg_buf2, sizeof(msg_buf),
          " Current resolved prefix %s id %d ",
