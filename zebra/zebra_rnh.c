@@ -669,13 +669,16 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 
 	if (rnh && rnh->state) {
 		nhg_id = rnh->state->nhe_id;
-	}
-	if (rnh->resolved_route) {
 		prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf));
-	}
-	snprintf(msg_buf, sizeof(msg_buf),
-         " Previous resolved prefix %s id %d",
+		snprintf(msg_buf, sizeof(msg_buf),
+         " Previous resolved prefix %s id %d ",
          pfx_buf, nhg_id);
+	} else {
+		nhg_id = 0;
+		memset(pfx_buf, 0, sizeof(pfx_buf));
+		snprintf(msg_buf, sizeof(msg_buf), " Previous no resolved entry ");
+	}
+
 
 
 	/* If we're resolving over a different route, resolution has changed or
@@ -706,17 +709,15 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 
 	if (rnh && rnh->state) {
 		nhg_id = rnh->state->nhe_id;
+		prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf));
+		snprintf(msg_buf2, sizeof(msg_buf),
+         " Current resolved prefix %s id %d ",
+         pfx_buf, nhg_id);
 	} else {
 		nhg_id = 0;
+		memset(pfx_buf, 0, sizeof(pfx_buf));
+		snprintf(msg_buf2, sizeof(msg_buf), " Current no resolved entry ");
 	}
-	if (rnh->resolved_route) {
-		prefix2str(&rnh->resolved_route, pfx_buf, sizeof(pfx_buf));
-	} else {
-		memset(pfx_buf, 0, sizeof(pfx_buf)); 
-	}
-	snprintf(msg_buf2, sizeof(msg_buf2),
-         " Current resolved via prefix %s id %d",
-         pfx_buf, nhg_id);
 
 	zlog_err("DEBUGME: in zebra_rnh_eval_nexthop_entry %s(%u):%pRN: state_changed %d, %s vs %s",
 			   VRF_LOGNAME(zvrf->vrf), zvrf->vrf->vrf_id, nrn,
