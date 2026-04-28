@@ -608,10 +608,9 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 			}
 
 			if (CHECK_FLAG(re->status, ROUTE_ENTRY_QUEUED)) {
-				if (IS_ZEBRA_DEBUG_NHT_DETAILED)
-					zlog_debug(
-						"        Route Entry %s queued",
-						zebra_route_string(re->type));
+					zlog_err(
+						"DEBUGME:  %pRN Route Entry %s queued, re %p",
+						rnh->node, zebra_route_string(re->type), re);
 				continue;
 			}
 

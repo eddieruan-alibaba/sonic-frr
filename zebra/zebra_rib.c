@@ -2032,9 +2032,8 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 	op = dplane_ctx_get_op(ctx);
 	status = dplane_ctx_get_status(ctx);
 
-	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
-		zlog_debug(
-			"%s(%u:%u):%pRN Processing dplane result ctx %p, op %s result %s",
+	zlog_err(
+			"%s(%u:%u):%pRN DEBUGME: Processing dplane result ctx %p, op %s result %s",
 			VRF_LOGNAME(vrf), dplane_ctx_get_vrf(ctx),
 			dplane_ctx_get_table(ctx), rn, ctx, dplane_op2str(op),
 			dplane_res2str(status));
@@ -2331,11 +2330,6 @@ static void rib_process_dplane_notify(struct zebra_dplane_ctx *ctx)
 
 	dest = rib_dest_from_rnode(rn);
 
-	if (debug_p)
-		zlog_debug("%s(%u:%u):%pRN Processing dplane notif ctx %p",
-			   VRF_LOGNAME(vrf), dplane_ctx_get_vrf(ctx),
-			   tableid, rn, ctx);
-
 	/*
 	 * Take a pass through the routes, look for matches with the context
 	 * info.
@@ -2360,6 +2354,10 @@ static void rib_process_dplane_notify(struct zebra_dplane_ctx *ctx)
 	/* Ensure we clear the QUEUED flag */
 	UNSET_FLAG(re->status, ROUTE_ENTRY_QUEUED);
 	UNSET_FLAG(re->status, ROUTE_ENTRY_ROUTE_REPLACING);
+
+	zlog_err("%s(%u:%u):%pRN DEBUGME Processing dplane notif ctx %p, re %p",
+			   VRF_LOGNAME(vrf), dplane_ctx_get_vrf(ctx),
+			   tableid, rn, ctx, re);
 
 	/* Is this a notification that ... matters? We mostly care about
 	 * the route that is currently selected for installation; we may also
