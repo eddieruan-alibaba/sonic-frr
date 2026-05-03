@@ -940,6 +940,7 @@ static void fpm_connect(struct event *t)
 }
 
 #define DPLANE_FPM_NL_BUF_SIZE 65536
+
 /**
  * Encode data plane operation context into netlink and enqueue it in the FPM
  * output buffer.
@@ -1114,6 +1115,7 @@ static int fpm_nl_enqueue(struct fpm_nl_ctx *fnc, struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_NONE:
 	case DPLANE_OP_STARTUP_STAGE:
 	case DPLANE_OP_VLAN_INSTALL:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		break;
 
 	}

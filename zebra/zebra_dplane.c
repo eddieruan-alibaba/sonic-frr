@@ -402,6 +402,19 @@ struct dplane_vlan_info {
 };
 
 /*
+ * NHT (Next Hop Tracking) event payload for dplane context.
+ */
+struct dplane_rnh_info {
+	struct prefix p;	/* Tracked RNH prefix */
+
+	struct prefix previous_resolved_prefix;
+	uint32_t previous_resolved_nhg_id;
+
+	struct prefix current_resolved_prefix;
+	uint32_t current_resolved_nhg_id;
+};
+
+/*
  * The context block used to exchange info about route updates across
  * the boundary between the zebra main context (and pthread) and the
  * dataplane layer (and pthread).
@@ -465,6 +478,7 @@ struct zebra_dplane_ctx {
 		struct dplane_netconf_info netconf;
 		enum zebra_dplane_startup_notifications spot;
 		struct dplane_srv6_encap_ctx srv6_encap;
+		struct dplane_rnh_info rnh_info;
 	} u;
 
 	/* Namespace info, used especially for netlink kernel communication */
@@ -916,6 +930,7 @@ static void dplane_ctx_free_internal(struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_INTF_NETCONFIG:
 	case DPLANE_OP_STARTUP_STAGE:
 	case DPLANE_OP_SRV6_ENCAP_SRCADDR_SET:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		break;
 	case DPLANE_OP_VLAN_INSTALL:
 		if (ctx->u.vlan_info.vlan_array)
@@ -1204,6 +1219,9 @@ const char *dplane_op2str(enum dplane_op_e op)
 
 	case DPLANE_OP_VLAN_INSTALL:
 		return "NEW_VLAN";
+
+	case DPLANE_OP_NHT_EVENT_UPDATE:
+		return "NHT_EVENT_UPDATE";
 	}
 
 	return "UNKNOWN";
@@ -2739,6 +2757,42 @@ dplane_ctx_get_srv6_encap_srcaddr(const struct zebra_dplane_ctx *ctx)
 	DPLANE_CTX_VALID(ctx);
 
 	return &(ctx->u.srv6_encap.srcaddr);
+}
+
+/* NHT event accessors */
+const struct prefix *dplane_ctx_get_nht_rnh_prefix(
+	const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.rnh_info.p;
+}
+
+const struct prefix *dplane_ctx_get_nht_prev_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.rnh_info.previous_resolved_prefix;
+}
+
+uint32_t dplane_ctx_get_nht_prev_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rnh_info.previous_resolved_nhg_id;
+}
+
+const struct prefix *dplane_ctx_get_nht_curr_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.rnh_info.current_resolved_prefix;
+}
+
+uint32_t dplane_ctx_get_nht_curr_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rnh_info.current_resolved_nhg_id;
 }
 
 void dplane_ctx_set_intf_addr(struct zebra_dplane_ctx *ctx,
@@ -6213,6 +6267,69 @@ dplane_srv6_encap_srcaddr_set(const struct in6_addr *addr, ns_id_t ns_id)
 }
 
 /*
+ * Enqueue an NHT event update to the dplane.
+ *
+ * Called from zebra_rnh_eval_nexthop_entry() when a state change is detected.
+ * The event is marked skip_kernel since it only targets FPM consumers.
+ */
+enum zebra_dplane_result dplane_nht_event_update(
+	struct rnh *rnh,
+	const struct prefix *prev_resolved_prefix,
+	uint32_t prev_resolved_nhg_id,
+	const struct prefix *curr_resolved_prefix,
+	uint32_t curr_resolved_nhg_id)
+{
+	struct zebra_dplane_ctx *ctx = NULL;
+	enum zebra_dplane_result result = ZEBRA_DPLANE_REQUEST_FAILURE;
+	int ret;
+
+	ctx = dplane_ctx_alloc();
+	if (!ctx)
+		return result;
+
+	/* Set operation type */
+	ctx->zd_op = DPLANE_OP_NHT_EVENT_UPDATE;
+	ctx->zd_status = ZEBRA_DPLANE_REQUEST_SUCCESS;
+
+	/* Skip kernel -- NHT events only target FPM consumers (fpmsyncd) */
+	dplane_ctx_set_skip_kernel(ctx);
+
+	/* Populate VRF from the RNH */
+	dplane_ctx_set_vrf(ctx, rnh->vrf_id);
+
+	/* Populate rnh_info payload */
+	prefix_copy(&ctx->u.rnh_info.p, &rnh->node->p);
+
+	if (prev_resolved_prefix)
+		prefix_copy(&ctx->u.rnh_info.previous_resolved_prefix,
+			    prev_resolved_prefix);
+	else
+		memset(&ctx->u.rnh_info.previous_resolved_prefix, 0,
+		       sizeof(struct prefix));
+
+	ctx->u.rnh_info.previous_resolved_nhg_id = prev_resolved_nhg_id;
+
+	if (curr_resolved_prefix)
+		prefix_copy(&ctx->u.rnh_info.current_resolved_prefix,
+			    curr_resolved_prefix);
+	else
+		memset(&ctx->u.rnh_info.current_resolved_prefix, 0,
+		       sizeof(struct prefix));
+
+	ctx->u.rnh_info.current_resolved_nhg_id = curr_resolved_nhg_id;
+
+	/* Enqueue to dplane */
+	ret = dplane_update_enqueue(ctx);
+
+	if (ret == AOK)
+		result = ZEBRA_DPLANE_REQUEST_QUEUED;
+	else
+		dplane_ctx_free(&ctx);
+
+	return result;
+}
+
+/*
  * Handler for 'show dplane'
  */
 int dplane_show_helper(struct vty *vty, bool detailed)
@@ -6960,6 +7077,11 @@ static void kernel_dplane_log_detail(struct zebra_dplane_ctx *ctx)
 			   dplane_op2str(dplane_ctx_get_op(ctx)),
 			   dplane_ctx_get_vlan_ifindex(ctx));
 		break;
+
+	case DPLANE_OP_NHT_EVENT_UPDATE:
+		zlog_debug("Dplane NHT event update, rnh %pFX",
+			   dplane_ctx_get_nht_rnh_prefix(ctx));
+		break;
 	}
 }
 
@@ -7140,6 +7262,7 @@ static void kernel_dplane_handle_result(struct zebra_dplane_ctx *ctx)
 
 	case DPLANE_OP_NONE:
 	case DPLANE_OP_STARTUP_STAGE:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		if (res != ZEBRA_DPLANE_REQUEST_SUCCESS)
 			atomic_fetch_add_explicit(&zdplane_info.dg_other_errors,
 						  1, memory_order_relaxed);

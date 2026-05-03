@@ -34,6 +34,7 @@
 #include "zebra/zebra_srte.h"
 #include "zebra/interface.h"
 #include "zebra/zebra_errors.h"
+#include "zebra/zebra_dplane.h"
 
 DEFINE_MTYPE_STATIC(ZEBRA, RNH, "Nexthop tracking object");
 
@@ -647,6 +648,64 @@ static void zebra_rnh_process_pseudowires(vrf_id_t vrfid, struct rnh *rnh)
 }
 
 /*
+ * Helper: extract the resolved NHG ID from a route_entry.
+ * Returns 0 if re is NULL (nexthop became unresolvable).
+ */
+static uint32_t zebra_rnh_get_resolved_nhg_id(const struct route_entry *re)
+{
+	if (!re)
+		return 0;
+
+	if (re->nhe)
+		return re->nhe->id;
+
+	return 0;
+}
+
+/*
+ * Helper: build and enqueue NHT dplane event.
+ *
+ * Called from zebra_rnh_eval_nexthop_entry() when state_changed is detected.
+ * Must be called before rnh->state and rnh->resolved_route are overwritten.
+ */
+static void zebra_rnh_send_nht_event(struct rnh *rnh,
+				     const struct route_entry *old_re,
+				     const struct route_entry *new_re,
+				     const struct prefix *old_resolved_pfx,
+				     const struct prefix *new_resolved_pfx)
+{
+	uint32_t prev_nhg_id;
+	uint32_t curr_nhg_id;
+	enum zebra_dplane_result result;
+	char rnh_buf[PREFIX_STRLEN];
+
+	prev_nhg_id = zebra_rnh_get_resolved_nhg_id(old_re);
+	curr_nhg_id = zebra_rnh_get_resolved_nhg_id(new_re);
+
+	if (IS_ZEBRA_DEBUG_NHT_DETAILED) {
+		char prev_buf[PREFIX_STRLEN];
+		char curr_buf[PREFIX_STRLEN];
+
+		prefix2str(&rnh->node->p, rnh_buf, sizeof(rnh_buf));
+		prefix2str(old_resolved_pfx, prev_buf, sizeof(prev_buf));
+		prefix2str(new_resolved_pfx, curr_buf, sizeof(curr_buf));
+		zlog_debug(
+			"NHT event: rnh=%s prev_pfx=%s prev_nhg=%u curr_pfx=%s curr_nhg=%u",
+			rnh_buf, prev_buf, prev_nhg_id, curr_buf,
+			curr_nhg_id);
+	}
+
+	result = dplane_nht_event_update(rnh, old_resolved_pfx, prev_nhg_id,
+					 new_resolved_pfx, curr_nhg_id);
+
+	if (result != ZEBRA_DPLANE_REQUEST_QUEUED) {
+		prefix2str(&rnh->node->p, rnh_buf, sizeof(rnh_buf));
+		zlog_warn("NHT event enqueue failed for rnh=%s: result=%d",
+			  rnh_buf, result);
+	}
+}
+
+/*
  * See if a tracked nexthop entry has undergone any change, and if so,
  * take appropriate action; this involves notifying any clients and/or
  * scheduling dependent static routes for processing.
@@ -658,6 +717,15 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 					 struct route_entry *re)
 {
 	int state_changed = 0;
+
+	/*
+	 * Save previous state before it gets overwritten below.
+	 * We need these to populate the NHT dplane event.
+	 */
+	struct route_entry *old_re = rnh->state;
+	struct prefix old_resolved_route;
+
+	prefix_copy(&old_resolved_route, &rnh->resolved_route);
 
 	/* If we're resolving over a different route, resolution has changed or
 	 * the resolving route has some change (e.g., metric), there is a state
@@ -687,6 +755,20 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	zebra_rnh_store_in_routing_table(rnh);
 
 	if (state_changed || force) {
+		/*
+		 * Enqueue NHT dplane event before notifying protocol clients.
+		 * Uses the saved old_re/old_resolved_route for previous state,
+		 * and the current re/resolved_route for current state.
+		 */
+		if (state_changed) {
+			zebra_rnh_send_nht_event(
+				rnh,
+				old_re,		    /* previous route_entry */
+				re,		    /* current route_entry */
+				&old_resolved_route,/* previous resolved prefix */
+				&rnh->resolved_route);/* current resolved prefix */
+		}
+
 		/* NOTE: Use the "copy" of resolving route stored in 'rnh' i.e.,
 		 * rnh->state.
 		 */

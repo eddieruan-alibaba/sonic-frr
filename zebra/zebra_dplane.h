@@ -214,6 +214,9 @@ enum dplane_op_e {
 
 	/* Source address for SRv6 encapsulation */
 	DPLANE_OP_SRV6_ENCAP_SRCADDR_SET,
+
+	/* NHT (Next Hop Tracking) event: RNH state change notification */
+	DPLANE_OP_NHT_EVENT_UPDATE,
 };
 
 /* Operational status of Bridge Ports */
@@ -847,6 +850,18 @@ void dplane_ctx_set_netconf_mcast(struct zebra_dplane_ctx *ctx,
 void dplane_ctx_set_netconf_linkdown(struct zebra_dplane_ctx *ctx,
 				     enum dplane_netconf_status_e val);
 
+/* NHT (Next Hop Tracking) event accessors */
+const struct prefix *dplane_ctx_get_nht_rnh_prefix(
+	const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_nht_prev_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nht_prev_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_nht_curr_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nht_curr_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx);
+
 /* Namespace fd info - esp. for netlink communication */
 const struct zebra_dplane_info *dplane_ctx_get_ns(
 	const struct zebra_dplane_ctx *ctx);
@@ -1049,6 +1064,19 @@ dplane_gre_set(struct interface *ifp, struct interface *ifp_link,
  */
 enum zebra_dplane_result
 dplane_srv6_encap_srcaddr_set(const struct in6_addr *addr, ns_id_t ns_id);
+
+/*
+ * Enqueue an NHT event update to the dplane.
+ *
+ * Called from zebra_rnh_eval_nexthop_entry() when a state change is detected.
+ * The event is marked skip_kernel since it only targets FPM consumers.
+ */
+enum zebra_dplane_result dplane_nht_event_update(
+	struct rnh *rnh,
+	const struct prefix *prev_resolved_prefix,
+	uint32_t prev_resolved_nhg_id,
+	const struct prefix *curr_resolved_prefix,
+	uint32_t curr_resolved_nhg_id);
 
 
 /* Forward ref of zebra_pbr_rule */
