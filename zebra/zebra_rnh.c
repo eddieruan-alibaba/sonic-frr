@@ -669,18 +669,13 @@ static uint32_t zebra_rnh_get_resolved_nhg_id(const struct route_entry *re)
  * Must be called before rnh->state and rnh->resolved_route are overwritten.
  */
 static void zebra_rnh_send_nht_event(struct rnh *rnh,
-				     const struct route_entry *old_re,
-				     const struct route_entry *new_re,
+				     const uint32_t prev_nhg_id,
+				     const uint32_t curr_nhg_id,
 				     const struct prefix *old_resolved_pfx,
 				     const struct prefix *new_resolved_pfx)
 {
-	uint32_t prev_nhg_id;
-	uint32_t curr_nhg_id;
 	enum zebra_dplane_result result;
 	char rnh_buf[PREFIX_STRLEN];
-
-	prev_nhg_id = zebra_rnh_get_resolved_nhg_id(old_re);
-	curr_nhg_id = zebra_rnh_get_resolved_nhg_id(new_re);
 
 	if (IS_ZEBRA_DEBUG_NHT_DETAILED) {
 		char prev_buf[PREFIX_STRLEN];
@@ -722,9 +717,10 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	 * Save previous state before it gets overwritten below.
 	 * We need these to populate the NHT dplane event.
 	 */
-	struct route_entry *old_re = rnh->state;
+	uint32_t prev_nhg_id;
 	struct prefix old_resolved_route;
-
+	uint32_t curr_nhg_id;
+	prev_nhg_id = zebra_rnh_get_resolved_nhg_id(rnh->state);
 	prefix_copy(&old_resolved_route, &rnh->resolved_route);
 
 	/* If we're resolving over a different route, resolution has changed or
@@ -761,10 +757,11 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		 * and the current re/resolved_route for current state.
 		 */
 		if (state_changed) {
+			curr_nhg_id = zebra_rnh_get_resolved_nhg_id(rnh->state);
 			zebra_rnh_send_nht_event(
 				rnh,
-				old_re,		    /* previous route_entry */
-				re,		    /* current route_entry */
+				prev_nhg_id,		    /* previous nhg id */
+				curr_nhg_id ,		    /* current nhg id*/
 				&old_resolved_route,/* previous resolved prefix */
 				&rnh->resolved_route);/* current resolved prefix */
 		}
