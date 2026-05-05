@@ -930,7 +930,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 	state->vrf_id = re->vrf_id;
 	state->status = re->status;
 
-	state->nhe = zebra_nhe_copy(re->nhe, 0);
+	state->nhe = zebra_nhe_copy(re->nhe, re->nhe->id);
 
 	/* Copy the 'fib' nexthops also, if present - we want to capture
 	 * the true installed nexthops.
