@@ -51,6 +51,12 @@ void show_route_nexthop_helper(struct vty *vty, const struct route_node *rn,
 			       const struct route_entry *re,
 			       const struct nexthop *nexthop);
 
+enum zebra_rnh_resolve_nexthop_fail_reason {
+	ZEBRA_RNH_RESOLVE_NH_OK = 0,
+	ZEBRA_RNH_RESOLVE_NH_FAIL = 1,
+	ZEBRA_RNH_RESOLVE_NH_IN_QUEUE = 2,
+};
+
 #ifdef __cplusplus
 }
 #endif

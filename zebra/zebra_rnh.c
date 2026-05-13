@@ -547,13 +547,17 @@ done:
 static struct route_entry *
 zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 				struct route_node *nrn, const struct rnh *rnh,
-				struct route_node **prn)
+				struct route_node **prn, enum zebra_rnh_resolve_nexthop_fail_reason *return_reason)
 {
 	struct route_table *route_table;
 	struct route_node *rn;
 	struct route_entry *re;
 
 	*prn = NULL;
+	if (!return_reason)
+		return NULL;
+	
+	*return_reason = ZEBRA_RNH_RESOLVE_NH_FAIL;
 
 	route_table = zvrf->table[afi][rnh->safi];
 	if (!route_table)
@@ -613,6 +617,7 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 					zlog_debug(
 						"        Route Entry %s queued",
 						zebra_route_string(re->type));
+				*return_reason = ZEBRA_RNH_RESOLVE_NH_IN_QUEUE;
 				continue;
 			}
 
@@ -626,6 +631,7 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		/* Route entry found, we're done; else, walk up the tree. */
 		if (re) {
 			*prn = rn;
+			*return_reason = ZEBRA_RNH_RESOLVE_NH_OK;
 			return re;
 		} else {
 			/* Resolve the nexthop recursively by finding matching
@@ -709,7 +715,8 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 					 int force, struct route_node *nrn,
 					 struct rnh *rnh,
 					 struct route_node *prn,
-					 struct route_entry *re)
+					 struct route_entry *re,
+					 enum zebra_rnh_resolve_nexthop_fail_reason return_reason)
 {
 	int state_changed = 0;
 
@@ -756,7 +763,7 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		 * Uses the saved old_re/old_resolved_route for previous state,
 		 * and the current re/resolved_route for current state.
 		 */
-		if (state_changed) {
+		if (state_changed && return_reason != ZEBRA_RNH_RESOLVE_NH_IN_QUEUE) {
 			curr_nhg_id = zebra_rnh_get_resolved_nhg_id(rnh->state);
 			zebra_rnh_send_nht_event(
 				rnh,
@@ -785,6 +792,7 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 	struct rnh *rnh;
 	struct route_entry *re;
 	struct route_node *prn;
+	enum zebra_rnh_resolve_nexthop_fail_reason return_reason = ZEBRA_RNH_RESOLVE_NH_OK;
 
 	if (IS_ZEBRA_DEBUG_NHT) {
 		zlog_debug("%s(%u):%pRN: Evaluate RNH, %s",
@@ -795,7 +803,7 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 	rnh = nrn->info;
 
 	/* Identify route entry (RE) resolving this tracked entry. */
-	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn);
+	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn, &return_reason);
 
 	/* If the entry cannot be resolved and that is also the existing state,
 	 * there is nothing further to do.
@@ -804,7 +812,7 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 		return;
 
 	/* Process based on type of entry. */
-	zebra_rnh_eval_nexthop_entry(zvrf, afi, force, nrn, rnh, prn, re);
+	zebra_rnh_eval_nexthop_entry(zvrf, afi, force, nrn, rnh, prn, re, return_reason);
 }
 
 /*
@@ -822,11 +830,12 @@ static void zebra_rnh_clear_nhc_flag(struct zebra_vrf *zvrf, afi_t afi,
 	struct rnh *rnh;
 	struct route_entry *re;
 	struct route_node *prn;
+	enum zebra_rnh_resolve_nexthop_fail_reason return_reason = ZEBRA_RNH_RESOLVE_NH_OK;
 
 	rnh = nrn->info;
 
 	/* Identify route entry (RIB) resolving this tracked entry. */
-	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn);
+	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn, &return_reason);
 
 	if (re)
 		UNSET_FLAG(re->status, ROUTE_ENTRY_LABELS_CHANGED);
