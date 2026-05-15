@@ -34,6 +34,7 @@
 #include "zebra/zebra_srte.h"
 #include "zebra/interface.h"
 #include "zebra/zebra_errors.h"
+#include "zebra/zebra_dplane.h"
 
 DEFINE_MTYPE_STATIC(ZEBRA, RNH, "Nexthop tracking object");
 
@@ -546,13 +547,18 @@ done:
 static struct route_entry *
 zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 				struct route_node *nrn, const struct rnh *rnh,
-				struct route_node **prn)
+				struct route_node **prn, bool *route_entry_queued)
 {
 	struct route_table *route_table;
 	struct route_node *rn;
 	struct route_entry *re;
+	bool saw_queued = false;
+	bool saw_selected = false;
 
 	*prn = NULL;
+
+	if (route_entry_queued)
+		*route_entry_queued = false;
 
 	route_table = zvrf->table[afi][rnh->safi];
 	if (!route_table)
@@ -607,11 +613,14 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 				continue;
 			}
 
+			saw_selected = true;
+
 			if (CHECK_FLAG(re->status, ROUTE_ENTRY_QUEUED)) {
 				if (IS_ZEBRA_DEBUG_NHT_DETAILED)
 					zlog_debug(
 						"        Route Entry %s queued",
 						zebra_route_string(re->type));
+				saw_queued = true;
 				continue;
 			}
 
@@ -634,6 +643,10 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		}
 	}
 
+	/* If we saw selected routes but all were queued, signal to caller */
+	if (route_entry_queued && saw_selected && saw_queued)
+		*route_entry_queued = true;
+
 	return NULL;
 }
 
@@ -655,9 +668,20 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 					 int force, struct route_node *nrn,
 					 struct rnh *rnh,
 					 struct route_node *prn,
-					 struct route_entry *re)
+					 struct route_entry *re,
+					 bool route_entry_queued)
 {
 	int state_changed = 0;
+	uint32_t prev_nhg_id;
+	struct prefix prev_resolved;
+
+	/* Cache previous state BEFORE copy_state() frees rnh->state.
+	 * CRITICAL: Only cache primitive values, never pointers.
+	 */
+	prev_nhg_id = (rnh->state && rnh->state->nhe)
+			      ? rnh->state->nhe->id
+			      : 0;
+	prefix_copy(&prev_resolved, &rnh->resolved_route);
 
 	/* If we're resolving over a different route, resolution has changed or
 	 * the resolving route has some change (e.g., metric), there is a state
@@ -687,6 +711,33 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	zebra_rnh_store_in_routing_table(rnh);
 
 	if (state_changed || force) {
+		/* Generate NHT dplane event for FPM consumers.
+		 * Skip if all candidate routes are queued — normal
+		 * re-evaluation will fire when the route is offloaded.
+		 */
+		if (state_changed && !route_entry_queued) {
+			struct prefix curr_resolved;
+			uint32_t curr_nhg_id;
+			enum zebra_dplane_result dplane_res;
+
+			prefix_copy(&curr_resolved, &rnh->resolved_route);
+			curr_nhg_id = (rnh->state && rnh->state->nhe)
+					      ? rnh->state->nhe->id
+					      : 0;
+
+			if (IS_ZEBRA_DEBUG_NHT)
+				zlog_debug(
+					"NHT event: rnh=%pFX prev_nhg=%u curr_nhg=%u",
+					&nrn->p, prev_nhg_id, curr_nhg_id);
+
+			dplane_res = dplane_nht_event_update(
+				&nrn->p, &prev_resolved, prev_nhg_id,
+				&curr_resolved, curr_nhg_id);
+			if (dplane_res != ZEBRA_DPLANE_REQUEST_QUEUED)
+				zlog_warn("NHT event enqueue failed for rnh=%pFX: result=%d",
+					  &nrn->p, dplane_res);
+		}
+
 		/* NOTE: Use the "copy" of resolving route stored in 'rnh' i.e.,
 		 * rnh->state.
 		 */
@@ -706,6 +757,7 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 	struct rnh *rnh;
 	struct route_entry *re;
 	struct route_node *prn;
+	bool route_entry_queued = false;
 
 	if (IS_ZEBRA_DEBUG_NHT) {
 		zlog_debug("%s(%u):%pRN: Evaluate RNH, %s",
@@ -716,7 +768,8 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 	rnh = nrn->info;
 
 	/* Identify route entry (RE) resolving this tracked entry. */
-	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn);
+	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn,
+					     &route_entry_queued);
 
 	/* If the entry cannot be resolved and that is also the existing state,
 	 * there is nothing further to do.
@@ -725,7 +778,8 @@ static void zebra_rnh_evaluate_entry(struct zebra_vrf *zvrf, afi_t afi,
 		return;
 
 	/* Process based on type of entry. */
-	zebra_rnh_eval_nexthop_entry(zvrf, afi, force, nrn, rnh, prn, re);
+	zebra_rnh_eval_nexthop_entry(zvrf, afi, force, nrn, rnh, prn, re,
+				    route_entry_queued);
 }
 
 /*
@@ -747,7 +801,7 @@ static void zebra_rnh_clear_nhc_flag(struct zebra_vrf *zvrf, afi_t afi,
 	rnh = nrn->info;
 
 	/* Identify route entry (RIB) resolving this tracked entry. */
-	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn);
+	re = zebra_rnh_resolve_nexthop_entry(zvrf, afi, nrn, rnh, &prn, NULL);
 
 	if (re)
 		UNSET_FLAG(re->status, ROUTE_ENTRY_LABELS_CHANGED);
@@ -848,7 +902,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 	state->vrf_id = re->vrf_id;
 	state->status = re->status;
 
-	state->nhe = zebra_nhe_copy(re->nhe, 0);
+	state->nhe = zebra_nhe_copy(re->nhe, re->nhe->id);
 
 	/* Copy the 'fib' nexthops also, if present - we want to capture
 	 * the true installed nexthops.

@@ -214,6 +214,9 @@ enum dplane_op_e {
 
 	/* Source address for SRv6 encapsulation */
 	DPLANE_OP_SRV6_ENCAP_SRCADDR_SET,
+
+	/* NHT (Nexthop Tracking) event update */
+	DPLANE_OP_NHT_EVENT_UPDATE,
 };
 
 /* Operational status of Bridge Ports */
@@ -898,6 +901,26 @@ struct nhg_hash_entry;
 enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nexthop_update(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe);
+
+/*
+ * Enqueue an NHT (Nexthop Tracking) event for the dataplane.
+ */
+enum zebra_dplane_result dplane_nht_event_update(
+	const struct prefix *rnh_prefix,
+	const struct prefix *prev_resolved_prefix, uint32_t prev_nhg_id,
+	const struct prefix *curr_resolved_prefix, uint32_t curr_nhg_id);
+
+/* NHT event context accessors */
+const struct prefix *dplane_ctx_get_rnh_prefix(
+	const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_rnh_prev_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_rnh_prev_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_rnh_curr_resolved_prefix(
+	const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_rnh_curr_resolved_nhg_id(
+	const struct zebra_dplane_ctx *ctx);
 
 /*
  * Enqueue LSP change operations for the dataplane.

@@ -5279,6 +5279,9 @@ static void rib_process_dplane_results(struct event *thread)
 			case DPLANE_OP_VLAN_INSTALL:
 				zebra_vlan_dplane_result(ctx);
 				break;
+
+			case DPLANE_OP_NHT_EVENT_UPDATE:
+				break;
 			} /* Dispatch by op code */
 
 			dplane_ctx_fini(&ctx);
