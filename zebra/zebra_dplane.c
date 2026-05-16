@@ -7076,7 +7076,7 @@ static void kernel_dplane_log_detail(struct zebra_dplane_ctx *ctx)
 
 	case DPLANE_OP_NHT_EVENT_UPDATE:
 		zlog_debug("Dplane NHT event update, rnh %pFX",
-			   dplane_ctx_get_nht_rnh_prefix(ctx));
+			   dplane_ctx_get_rnh_prefix(ctx));
 		break;
 	}
 }
