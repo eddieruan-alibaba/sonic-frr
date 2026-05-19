@@ -259,11 +259,15 @@ static void zebra_nhg_dependents_del(struct nhg_hash_entry *from,
 	nhg_connected_tree_del_nhe(&from->nhg_dependents, dependent);
 
 	/*
-	 * If nhg fib is enabled and the tree owner is already installed,
-	 * reinstall it so FPM gets the updated dependents list.
+	 * If nhg fib is enabled and the tree owner is already installed
+	 * (or its install is in flight), reinstall it so FPM gets the
+	 * updated dependents list. The QUEUED case is handled at install
+	 * completion: after INSTALLED is set, the dplane callback will
+	 * see REINSTALL_FPM_ONLY and trigger another install.
 	 */
 	if (zebra_nhg_fib_enabled &&
-	    CHECK_FLAG(from->flags, NEXTHOP_GROUP_INSTALLED)) {
+	    (CHECK_FLAG(from->flags, NEXTHOP_GROUP_INSTALLED) ||
+	     CHECK_FLAG(from->flags, NEXTHOP_GROUP_QUEUED))) {
 		SET_FLAG(from->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 	}
 }
@@ -274,13 +278,15 @@ static void zebra_nhg_dependents_add(struct nhg_hash_entry *to,
 	nhg_connected_tree_add_nhe(&to->nhg_dependents, dependent);
 
 	/*
-	 * If nhg fib is enabled and the tree owner is already installed,
-	 * reinstall it so FPM gets the updated dependents list.
-	 * Note: nhg_connected_tree_add_nhe's internal REINSTALL check is
-	 * on the wrong NHE (the inserted entry, not the tree owner).
+	 * If nhg fib is enabled and the tree owner is already installed
+	 * (or its install is in flight), reinstall it so FPM gets the
+	 * updated dependents list. The QUEUED case is handled at install
+	 * completion: after INSTALLED is set, the dplane callback will
+	 * see REINSTALL_FPM_ONLY and trigger another install.
 	 */
 	if (zebra_nhg_fib_enabled &&
-	    CHECK_FLAG(to->flags, NEXTHOP_GROUP_INSTALLED)) {
+	    (CHECK_FLAG(to->flags, NEXTHOP_GROUP_INSTALLED) ||
+	     CHECK_FLAG(to->flags, NEXTHOP_GROUP_QUEUED))) {
 		SET_FLAG(to->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 	}
 }
@@ -3906,6 +3912,20 @@ void zebra_nhg_dplane_result(struct zebra_dplane_ctx *ctx)
 				zsend_nhg_notify(nhe->type, nhe->zapi_instance,
 						 nhe->zapi_session, nhe->id,
 						 ZAPI_NHG_INSTALLED);
+
+			/*
+			 * If REINSTALL_FPM_ONLY was set while this install was
+			 * in flight (e.g. a dependent was added/removed while
+			 * QUEUED), trigger another install now so FPM sees the
+			 * updated dependents list. QUEUED is already cleared
+			 * and INSTALLED is now set, so the install condition in
+			 * zebra_nhg_install_kernel() will fire on the
+			 * REINSTALL_FPM_ONLY branch.
+			 */
+			if (zebra_nhg_fib_enabled &&
+			    CHECK_FLAG(nhe->flags,
+				       NEXTHOP_GROUP_REINSTALL_FPM_ONLY))
+				zebra_nhg_install_kernel(nhe, ZEBRA_ROUTE_MAX);
 			break;
 		case ZEBRA_DPLANE_REQUEST_FAILURE:
 			/*
