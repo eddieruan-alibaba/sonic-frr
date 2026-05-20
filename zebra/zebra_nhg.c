@@ -1854,6 +1854,12 @@ void zebra_nhg_increment_ref(struct nhg_hash_entry *nhe)
 		event_cancel(&nhe->timer);
 		nhe->refcnt--;
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_KEEP_AROUND);
+		/* NHG is already installed in kernel but FPM/SONiC needs
+		 * re-notification for PIC HW update since the NHG was
+		 * previously marked for deletion.
+		 */
+		if (zebra_nhg_fib_enabled)
+			SET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 	}
 
 	if (!zebra_nhg_depends_is_empty(nhe))
