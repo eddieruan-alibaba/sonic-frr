@@ -2259,9 +2259,9 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 
 	if (!zrouter.asic_offloaded) {
 		/*
-		 * Skip zebra_rib_evaluate_rn_nexthops if asic_offloaded is not on
-		 * When asic_offloaded is on, we need to wait for data plane response
-		 * before calling zebra_rib_evaluate_rn_nexthops
+		 * When asic_offloaded, defer NHT evaluation to
+		 * rib_process_dplane_notify to avoid interim flaps
+		 * during convergence.
 		 */
 		zebra_rib_evaluate_rn_nexthops(rn, seq, rt_delete);
 	}
@@ -2408,6 +2408,20 @@ static void rib_process_dplane_notify(struct zebra_dplane_ctx *ctx)
 					zebra_route_string(
 						dplane_ctx_get_type(ctx)));
 		}
+
+		if (zrouter.asic_offloaded) {
+			/*
+			* Even though this RE is no longer selected_fib,
+			* evaluate NHT on the route_node. The current
+			* selected_fib may not have received its own dplane
+			* notification yet, and NHT evaluation operates on
+			* the node (checking whatever is best now), not on
+			* this specific RE.
+			*/
+			zebra_rib_evaluate_rn_nexthops(
+				rn, zebra_router_get_next_sequence(), false);
+		}
+
 		goto done;
 	} else {
 		uint32_t flags = dplane_ctx_get_flags(ctx);
