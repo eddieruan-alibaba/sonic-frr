@@ -2257,7 +2257,14 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 			zebra_rib_fixup_system(rn);
 	}
 
-	zebra_rib_evaluate_rn_nexthops(rn, seq, rt_delete);
+	if (!zrouter.asic_offloaded) {
+		/*
+		 * Skip zebra_rib_evaluate_rn_nexthops if asic_offloaded is not on
+		 * When asic_offloaded is on, we need to wait for data plane response
+		 * before calling zebra_rib_evaluate_rn_nexthops
+		 */
+		zebra_rib_evaluate_rn_nexthops(rn, seq, rt_delete);
+	}
 	zebra_rib_evaluate_mpls(rn);
 done:
 
