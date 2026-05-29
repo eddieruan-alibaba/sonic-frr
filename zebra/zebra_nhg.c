@@ -3407,6 +3407,17 @@ static uint16_t zebra_nhg_nhe2grp_internal(struct nh_grp *grp, uint16_t curr_ind
 				continue;
 			}
 
+			if (depend->nhg.nexthop &&
+			    !CHECK_FLAG(depend->nhg.nexthop->flags,
+					NEXTHOP_FLAG_ACTIVE)) {
+				if (IS_ZEBRA_DEBUG_RIB_DETAILED
+				    || IS_ZEBRA_DEBUG_NHG)
+					zlog_debug(
+						"%s: Nexthop ID (%u) is inactive, not appending to dataplane install group",
+						__func__, depend->id);
+				continue;
+			}
+
 			/* Check for duplicate IDs, ignore if found. */
 			for (int j = 0; j < i; j++) {
 				if (depend->id == grp[j].id) {
@@ -3592,6 +3603,20 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 			continue;
 		}
 
+		/* Skip inactive nexthops */
+		if (curr_node->nhg.nexthop &&
+		    !CHECK_FLAG(curr_node->nhg.nexthop->flags,
+				NEXTHOP_FLAG_ACTIVE)) {
+			zlog_err("%s:     SKIP: NHG ID %u is inactive",
+				 __func__, curr_node->id);
+			if (IS_ZEBRA_DEBUG_RIB_DETAILED
+			    || IS_ZEBRA_DEBUG_NHG)
+				zlog_debug(
+					"%s: NHG ID (%u) inactive, not appending to dplane install group",
+					__func__, curr_node->id);
+			continue;
+		}
+
 		/* If it's queued, we just log but not skip */
 		if (CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)) {
 			zlog_err("%s:     ADD QUEUED NODE: NHG ID %u QUEUED - dependency being installed, we add it to nh_grp_full array.",
@@ -3628,6 +3653,13 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_RECURSIVE)
 					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
 						zlog_err("%s:         sub-depend id=%u SKIP: not INSTALLED (normal leaf case)",
+							 __func__, sub_rb_node->nhe->id);
+						continue;
+					}
+					if (sub_rb_node->nhe->nhg.nexthop &&
+					    !CHECK_FLAG(sub_rb_node->nhe->nhg.nexthop->flags,
+							NEXTHOP_FLAG_ACTIVE)) {
+						zlog_err("%s:         sub-depend id=%u SKIP: inactive",
 							 __func__, sub_rb_node->nhe->id);
 						continue;
 					}
