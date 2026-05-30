@@ -3809,8 +3809,17 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
 	}
 
-	/* Make sure all depends are installed/queued */
+	/* Make sure all depends are installed/queued.
+	 * When nhg_fib is enabled and this NHG is being reinstalled,
+	 * propagate REINSTALL_FPM_ONLY to depends so FPM receives
+	 * updated state for all members of the hierarchy.
+	 */
 	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+		if (zebra_nhg_fib_enabled &&
+		    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
+			SET_FLAG(rb_node_dep->nhe->flags,
+				 NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+		}
 		zebra_nhg_install_kernel(rb_node_dep->nhe, type);
 	}
 
