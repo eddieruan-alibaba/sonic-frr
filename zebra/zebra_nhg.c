@@ -1858,8 +1858,16 @@ void zebra_nhg_increment_ref(struct nhg_hash_entry *nhe)
 		 * re-notification for PIC HW update since the NHG was
 		 * previously marked for deletion.
 		 */
-		if (zebra_nhg_fib_enabled)
+		if (zebra_nhg_fib_enabled) {
+			struct nhg_connected *rb_node_dep = NULL;
+
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+			frr_each(nhg_connected_tree, &nhe->nhg_depends,
+				 rb_node_dep) {
+				SET_FLAG(rb_node_dep->nhe->flags,
+					 NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+			}
+		}
 	}
 
 	if (!zebra_nhg_depends_is_empty(nhe))
@@ -3809,17 +3817,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
 	}
 
-	/* Make sure all depends are installed/queued.
-	 * When nhg_fib is enabled and this NHG is being reinstalled,
-	 * propagate REINSTALL_FPM_ONLY to depends so FPM receives
-	 * updated state for all members of the hierarchy.
-	 */
+	/* Make sure all depends are installed/queued */
 	frr_each(nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-		if (zebra_nhg_fib_enabled &&
-		    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
-			SET_FLAG(rb_node_dep->nhe->flags,
-				 NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
-		}
 		zebra_nhg_install_kernel(rb_node_dep->nhe, type);
 	}
 
