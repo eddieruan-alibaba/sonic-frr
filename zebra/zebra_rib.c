@@ -2257,23 +2257,7 @@ static void rib_process_result(struct zebra_dplane_ctx *ctx)
 			zebra_rib_fixup_system(rn);
 	}
 
-	/*
-	 * When asic_offloaded, defer NHT evaluation to
-	 * rib_process_dplane_notify to avoid interim flaps
-	 * during convergence. However, still evaluate immediately for
-	 *  - failures (no dplane NOTIFY will follow), and
-	 *  - system/kernel/connected routes (they typically do not
-	 *    generate a DPLANE_OP_ROUTE_NOTIFY from the ASIC layer),
-	 * otherwise NHT clients (e.g. BGP) would never be told that
-	 * a resolving route exists and dependent prefixes would be
-	 * missing.
-	 */
-	if (!zrouter.asic_offloaded ||
-	    status != ZEBRA_DPLANE_REQUEST_SUCCESS ||
-	    (re && RIB_SYSTEM_ROUTE(re)) ||
-	    (old_re && RIB_SYSTEM_ROUTE(old_re))) {
-		zebra_rib_evaluate_rn_nexthops(rn, seq, rt_delete);
-	}
+	zebra_rib_evaluate_rn_nexthops(rn, seq, rt_delete);
 	zebra_rib_evaluate_mpls(rn);
 done:
 
@@ -2417,20 +2401,6 @@ static void rib_process_dplane_notify(struct zebra_dplane_ctx *ctx)
 					zebra_route_string(
 						dplane_ctx_get_type(ctx)));
 		}
-
-		if (zrouter.asic_offloaded) {
-			/*
-			* Even though this RE is no longer selected_fib,
-			* evaluate NHT on the route_node. The current
-			* selected_fib may not have received its own dplane
-			* notification yet, and NHT evaluation operates on
-			* the node (checking whatever is best now), not on
-			* this specific RE.
-			*/
-			zebra_rib_evaluate_rn_nexthops(
-				rn, zebra_router_get_next_sequence(), false);
-		}
-
 		goto done;
 	} else {
 		uint32_t flags = dplane_ctx_get_flags(ctx);
