@@ -615,7 +615,8 @@ zebra_rnh_resolve_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 
 			saw_selected = true;
 
-			if (CHECK_FLAG(re->status, ROUTE_ENTRY_QUEUED)) {
+			if (CHECK_FLAG(re->status, ROUTE_ENTRY_QUEUED) &&
+			    !CHECK_FLAG(re->status, ROUTE_ENTRY_INSTALLED)) {
 				if (IS_ZEBRA_DEBUG_NHT_DETAILED)
 					zlog_debug(
 						"        Route Entry %s queued",
