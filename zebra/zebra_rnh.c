@@ -663,12 +663,8 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	uint32_t prev_nhg_id;
 	struct prefix prev_resolved;
 
-	/* Cache previous state BEFORE copy_state() frees rnh->state.
-	 * CRITICAL: Only cache primitive values, never pointers.
-	 */
-	prev_nhg_id = (rnh->state && rnh->state->nhe)
-			      ? rnh->state->nhe->id
-			      : 0;
+	/* Cache previous state BEFORE copy_state() updates rnh. */
+	prev_nhg_id = rnh->resolved_nhg_id;
 	prefix_copy(&prev_resolved, &rnh->resolved_route);
 
 	/* If we're resolving over a different route, resolution has changed or
@@ -706,9 +702,7 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 			enum zebra_dplane_result dplane_res;
 
 			prefix_copy(&curr_resolved, &rnh->resolved_route);
-			curr_nhg_id = (rnh->state && rnh->state->nhe)
-					      ? rnh->state->nhe->id
-					      : 0;
+			curr_nhg_id = rnh->resolved_nhg_id;
 
 			if (IS_ZEBRA_DEBUG_NHT)
 				zlog_debug(
@@ -873,6 +867,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 		free_state(rnh->vrf_id, rnh->state, rn);
 		rnh->state = NULL;
 	}
+	rnh->resolved_nhg_id = 0;
 
 	if (!re)
 		return;
@@ -884,7 +879,8 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 	state->vrf_id = re->vrf_id;
 	state->status = re->status;
 
-	state->nhe = zebra_nhe_copy(re->nhe, re->nhe->id);
+	state->nhe = zebra_nhe_copy(re->nhe, 0);
+	rnh->resolved_nhg_id = re->nhe->id;
 
 	/* Copy the 'fib' nexthops also, if present - we want to capture
 	 * the true installed nexthops.
