@@ -58,6 +58,9 @@ DEFINE_MTYPE_STATIC(ZEBRA, RIB_DEST,       "RIB destination");
 DEFINE_MTYPE_STATIC(ZEBRA, RIB_UPDATE_CTX, "Rib update context object");
 DEFINE_MTYPE_STATIC(ZEBRA, WQ_WRAPPER, "WQ wrapper");
 
+/* Global flag set by zebra --nhg-fib command-line option. */
+extern bool zebra_nhg_fib_enabled;
+
 /*
  * Event, list, and mutex for delivery of dataplane results
  */
@@ -477,7 +480,14 @@ static void route_entry_attach_ref(struct route_entry *re,
 static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_hash_entry *nhe)
 {
 	re->nhe_received = nhe;
-	zebra_nhg_mark_received_flag(nhe);
+
+	/*
+	 * We only mark the protocol-received flag in nhg-fib mode
+	 * to pass the full NHG to FPM.
+	 * In normal mode, we skip this to avoid breaking other features.
+	 */
+	if (zebra_nhg_fib_enabled)
+		zebra_nhg_mark_received_flag(nhe);
 
 	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
 		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ",

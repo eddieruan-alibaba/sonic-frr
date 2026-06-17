@@ -189,6 +189,13 @@ struct nhg_hash_entry {
  * Reinstall NHG to FPM Only
  */
 #define NEXTHOP_GROUP_REINSTALL_FPM_ONLY (1 << 11)
+
+/*
+ * NHG delivered to FPM only, not actually installed in kernel.
+ * Used in RIBFIB (--nhg-fib) mode for RECEIVED or RECURSIVE NHEs
+ * that go through skip_kernel path. Community INSTALLED semantics unaffected.
+ */
+#define NEXTHOP_GROUP_INSTALLED_FPM_ONLY (1 << 12)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */

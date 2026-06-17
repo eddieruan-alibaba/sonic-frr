@@ -3670,6 +3670,8 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		    (((op == DPLANE_OP_ROUTE_INSTALL) ||
 		      (op == DPLANE_OP_ROUTE_UPDATE)) &&
 		     !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) &&
+		     !(zebra_nhg_fib_enabled &&
+		       CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) &&
 		     !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)))
 			return ENOENT;
 	}
@@ -4727,7 +4729,9 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
 			/* No Need to program kernel if it has been installed */
-			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED)) {
+			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
+			    (zebra_nhg_fib_enabled &&
+			     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))) {
 				dplane_ctx_set_skip_kernel(ctx);
 			}
 			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);

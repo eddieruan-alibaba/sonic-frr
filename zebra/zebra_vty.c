@@ -54,6 +54,8 @@
 #include "zebra/zebra_neigh.h"
 #include "zebra/zebra_ptm.h"
 
+extern bool zebra_nhg_fib_enabled;
+
 /* context to manage dumps in multiple tables or vrfs */
 struct route_show_ctx {
 	bool multi;       /* dump multiple tables or vrf */
@@ -1137,6 +1139,12 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 				json_object_boolean_true_add(json, "installed");
 			else
 				vty_out(vty, ", Installed");
+		} else if (zebra_nhg_fib_enabled &&
+			   CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) {
+			if (json)
+				json_object_boolean_true_add(json, "installedFpmOnly");
+			else
+				vty_out(vty, ", Installed (FPM only)");
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
 			if (json)
