@@ -1222,11 +1222,10 @@ static void zebra_nhg_handle_install(struct nhg_hash_entry *nhe, bool install)
 
 	frr_each_safe (nhg_connected_tree, &nhe->nhg_dependents, rb_node_dep) {
 		zebra_nhg_set_valid(rb_node_dep->nhe, true);
-		/* install dependent NHG into kernel */
+		/* install dependent NHG into kernel or FPM */
 		if (install) {
 			if ((CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-			     (zebra_nhg_fib_enabled &&
-			      CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))) &&
+			     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) &&
 			    CHECK_FLAG(rb_node_dep->nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
 				nhg_handle_install_one(rb_node_dep);
 			}
@@ -1823,8 +1822,7 @@ void zebra_nhg_decrement_ref(struct nhg_hash_entry *nhe)
 
 	if (!zebra_router_in_shutdown() && nhe->refcnt <= 0 &&
 	    (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-	     (zebra_nhg_fib_enabled &&
-	      CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) ||
+	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY) || /* FPM-only also keeps around */
 	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)) &&
 	    !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_KEEP_AROUND)) {
 		nhe->refcnt = 1;
@@ -3568,13 +3566,12 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 		}
 
 		/* Recursive NHGs are never installed to kernel, only require VALID.
-		 * Non-recursive (leaf) NHGs must be INSTALLED or QUEUED to be included.
+		 * Non-recursive (leaf) NHGs must be INSTALLED/INSTALLED_FPM_ONLY or QUEUED to be included.
 		 */
 		if (!is_srv6_nhg(curr_node)
 		    && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_RECURSIVE)
 		    && !(CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED) ||
-		         (zebra_nhg_fib_enabled &&
-		          CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) ||
+		         CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY) ||
 		         CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)))
 		{
 			zlog_err("%s:     SKIP: NHG ID %u not INSTALLED and not QUEUED (normal leaf case) - dependency not ready",
@@ -3622,8 +3619,7 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 					if (!is_srv6_nhg(sub_rb_node->nhe)
 					    && !CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_RECURSIVE)
 					    && !(CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-					         (zebra_nhg_fib_enabled &&
-					          CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)))) {
+					         CHECK_FLAG(sub_rb_node->nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))) {
 						zlog_err("%s:         sub-depend id=%u SKIP: not INSTALLED (normal leaf case)",
 							 __func__, sub_rb_node->nhe->id);
 						continue;
@@ -3803,14 +3799,13 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 
 	/*
 	 * Info dplane when nhe is valid, not in queue  and one of the following cases
-	 *  INSTALL
+	 *  INSTALL (kernel or FPM-only)
 	 *  REINSTALL
 	 *  REINSTALL_FPM_ONLY
 	 */
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID) &&
 	    (!(CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-	       (zebra_nhg_fib_enabled &&
-	        CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))) ||
+	       CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) ||
 	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL) ||
 	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) &&
 	    !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)) {
@@ -3839,8 +3834,8 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 {
 	/*
-	 * Clearly if the nexthop group is installed we should
-	 * remove it.  Additionally If the nexthop is already
+	 * Clearly if the nexthop group is installed (to kernel or FPM-only),
+	 * we should remove it. Additionally If the nexthop is already
 	 * QUEUED for installation, we should also just send
 	 * a deletion down as well.  We cannot necessarily pluck
 	 * the installation out of the queue ( since it may have
@@ -3848,8 +3843,7 @@ void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe)
 	 * main pthread ).
 	 */
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-	    (zebra_nhg_fib_enabled &&
-	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) ||
+	    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY) ||
 	    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)) {
 		int ret = dplane_nexthop_delete(nhe);
 
@@ -3913,6 +3907,11 @@ void zebra_nhg_dplane_result(struct zebra_dplane_ctx *ctx)
 		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL);
 		switch (status) {
 		case ZEBRA_DPLANE_REQUEST_SUCCESS:
+			/*
+			 * For RECEIVED/RECURSIVE NHEs in nhg-fib mode, set
+			 * INSTALLED_FPM_ONLY instead of INSTALLED since they
+			 * are not actually programmed to kernel.
+			 */
 			if (zebra_nhg_fib_enabled &&
 			    (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED) ||
 			     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))) {

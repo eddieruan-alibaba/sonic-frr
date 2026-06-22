@@ -1139,8 +1139,7 @@ static void show_nexthop_group_out(struct vty *vty, struct nhg_hash_entry *nhe,
 				json_object_boolean_true_add(json, "installed");
 			else
 				vty_out(vty, ", Installed");
-		} else if (zebra_nhg_fib_enabled &&
-			   CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) {
+		} else if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) {
 			if (json)
 				json_object_boolean_true_add(json, "installedFpmOnly");
 			else

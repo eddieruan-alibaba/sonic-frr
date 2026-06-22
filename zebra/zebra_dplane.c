@@ -3660,8 +3660,8 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 			ctx->u.rinfo.nhe_received.old_id = 0;
 		}
 		/*
-		 * Check if the nhe is installed/queued before doing anything
-		 * with this route.
+		 * Check if the nhe is installed/queued (kernel or FPM-only)
+		 * before doing anything with this route.
 		 *
 		 * If its a delete we only use the prefix anyway, so this only
 		 * matters for INSTALL/UPDATE.
@@ -3670,8 +3670,7 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		    (((op == DPLANE_OP_ROUTE_INSTALL) ||
 		      (op == DPLANE_OP_ROUTE_UPDATE)) &&
 		     !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) &&
-		     !(zebra_nhg_fib_enabled &&
-		       CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) &&
+		     !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY) &&
 		     !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)))
 			return ENOENT;
 	}
@@ -4728,10 +4727,9 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 			return ZEBRA_DPLANE_REQUEST_SUCCESS;
 		}
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY)) {
-			/* No Need to program kernel if it has been installed */
+			/* Skip kernel if already installed (kernel or FPM-only) */
 			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
-			    (zebra_nhg_fib_enabled &&
-			     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))) {
+			    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY)) {
 				dplane_ctx_set_skip_kernel(ctx);
 			}
 			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
