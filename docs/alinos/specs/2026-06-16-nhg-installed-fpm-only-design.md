@@ -414,3 +414,179 @@ ip route 10.0.0.0/24 172.16.2.1
 - 清理点与 INSTALLED 一一对齐：5 处 UNSET 全部覆盖
 - 生产 NHG 294 / NHE 259 EINVAL 在新状态机下被根治（§6.1 推演验证通过）
 - 默认编译（无 --nhg-fib）行为与社区完全一致、零差异（§6.3 验证通过）
+
+## 12. 设备验证记录
+
+### 12.1 验证环境
+
+| 维度 | 信息 |
+|------|------|
+| 设备 | PE3 / 10.250.0.53（KVM 虚拟设备，cisco-8101-p4-32x100-vs） |
+| Image | SONiC.rib_fib.170-dirty-20260622.063444 |
+| zebra cmdline | `/usr/lib/frr/zebra ... --nhg-fib`（RIBFIB 模式启用） |
+| 拓扑 | PE3 通过 Ethernet4 连 P2（fc08::2，BGP 邻居 up），通过 Ethernet12 连 P4（fc06::2，BGP 邻居 down） |
+
+### 12.2 验证场景
+
+复用 ribfib_route_convergence.md §7.1 的 Test Topology 1 静态路由配置（递归依赖 BGP 学到的 nexthop），通过 shutdown Ethernet4 让所有 BGP NH 变 inactive，模拟生产 Jenkins 962 的 EINVAL 触发条件。
+
+#### 配置
+
+```
+vtysh -c 'configure terminal' \
+  -c 'ipv6 route 1::1/128 2064:100::1d' \
+  -c 'ipv6 route 1::1/128 2064:200::1e' \
+  -c 'ipv6 route 2::2/128 2064:200::1e' \
+  -c 'ipv6 route 3::3/128 1::1' \
+  -c 'ipv6 route 3::3/128 2::2' \
+  -c 'ipv6 route 4::4/128 1::1' -c 'end'
+```
+
+#### 触发
+
+```
+sudo config interface shutdown Ethernet4
+```
+
+### 12.3 关键证据
+
+#### 证据 1：INSTALLED_FPM_ONLY 在使用，且与 inactive 状态共存
+
+```
+admin@PE3:~$ vtysh -c 'show nexthop-group rib' | grep -B 4 'fc08::2.*inactive' | head -10
+     Uptime: 04:23:51
+     VRF: default(IPv6)
+     Nexthop Count: 1
+     Valid, Installed (FPM only)            ← 关键：不是 "Valid, Installed"
+           via fc08::2 (vrf default) inactive, weight 1
+```
+
+NHE flags = `0x1401`（`VALID | RECEIVED | INSTALLED_FPM_ONLY`）—— **未携带** INSTALLED 位。
+
+#### 证据 2：NHE 状态量化（shutdown 后稳定态）
+
+| 类别 | 计数 |
+|------|------|
+| 总 NHE | 235 |
+| `Valid, Installed`（真装 kernel） | 16 |
+| `Valid, Installed (FPM only)`（FPM-only 假装成功） | 12 |
+| 含 inactive nexthop 的 NHE | 117 |
+
+#### 证据 3：生产 EINVAL 0 次复现
+
+```
+admin@PE3:~$ sudo grep -ic 'Failed to install Nexthop' /var/log/frr/zebra.log
+0
+```
+
+生产 Jenkins 962 同模型场景下该错误反复出现（`Failed to install Nexthop (294[259/264])`）。改后场景压力更大（整个 Ethernet4 down 导致全部 BGP NH 失效），仍然 0 次。
+
+#### 证据 4：bug 修复路径闭环验证
+
+推理链：
+1. inactive 递归 NHE 显示 `Valid, Installed (FPM only)` → INSTALLED 位 = 0
+2. 社区 `nhe2grp_internal()` 纳入条件 `VALID && (INSTALLED || QUEUED)` → INSTALLED == 0 → **跳过该 NHE**
+3. kernel 收到的 NHG 不带 inactive 成员 → 不会校验失败
+4. 因此 zebra.log 无 `Failed to install Nexthop` 错误
+
+`Failed to install Nexthop = 0` 即"inactive NHE 没被压进 kernel nh_grp[]"的等价证明（如果被压进去，kernel 必然 EINVAL，必然记录该错误）。
+
+### 12.4 旁证：另一类瞬态错误（与本 spec 无关）
+
+shutdown Ethernet4 瞬间日志中出现 4 条：
+```
+ERR netlink-dp (NS 0) error: Invalid argument, type=RTM_NEWROUTE(24), seq=1039
+WARNING staticd: Route 1::1/128 failed to install for table: 254
+```
+
+这是 **RTM_NEWROUTE**（路由层）瞬态错误——所有 nexthop 全 inactive 时 kernel 拒绝路由。staticd 也正确报 failed。**不是** 本 spec 修复的 RTM_NEWNEXTHOP NHG 错误，属预期行为。
+
+### 12.5 验证结论
+
+- INSTALLED_FPM_ONLY flag 在 RIBFIB 模式下按设计生效
+- 生产 EINVAL 场景在改后零复现
+- show 命令 `Installed (FPM only)` 显示工作正常，便于运维识别状态
+
+## 13. 环境拉起踩坑记录
+
+本节记录验证过程中遇到的环境问题，供后续验证场景参考。
+
+### 13.1 现象
+
+Jenkins build 的 "Set up Pytest ENV VM" 阶段 40 分钟 timeout 失败（exit code 143），`1_setup_pytest_vm.txt` 日志 0 字节或极小。
+
+### 13.2 根因
+
+镜像服务器 `30.57.186.117` 带宽不稳定（200~700 KB/s），下载 1.4GB 的 `sonic-vs_daily.img.gz` 需要 50~90 分钟，超过 setup 阶段的 40 分钟 timeout。
+
+### 13.3 排查路径
+
+1. SSH 到 Jenkins node（`11.165.122.19`），检查 VM 状态：`virsh list --all`
+2. Ping pytest VM：`ping 192.168.0.2` → 不通
+3. 检查 vnet RX packets：`ip -s link show vnet0` → RX=0
+4. 初步误判为 VM 内部 OS 未启动 → 重启 host 后问题复现
+5. 观察 `pstree` 发现 setup 进程子进程卡在 `wget`
+6. 测速确认 server 带宽瓶颈（非 VM 问题）
+
+### 13.4 解决方案：预下载镜像 + skip 模式 + hardlink 注入
+
+#### 前提条件
+
+- `pytest_mgmt.py` 支持 `vsonic_image=skip` 参数（跳过下载，`sleep 120s`）
+- setup 脚本的 `local_cache_dir` 是动态路径：`/tmp/local_cache/{时间戳}/`
+
+#### Step 1：预下载镜像到 host（一次性，或镜像更新时重做）
+
+```bash
+ssh root@11.165.122.19
+mkdir -p /root/img_cache
+nohup wget -c -O /root/img_cache/sonic-vs_daily.img.gz \
+  http://30.57.186.117/ribfib/latest/sonic-vs_daily.img.gz \
+  > /root/img_cache/wget.log 2>&1 &
+
+# 查看进度
+tail -f /root/img_cache/wget.log
+
+# 下载完成后验证
+gzip -t /root/img_cache/sonic-vs_daily.img.gz && echo "OK"
+```
+
+#### Step 2：触发 Jenkins build 前，在 host 上启动监听循环
+
+```bash
+ssh root@11.165.122.19
+
+# 一次性监听脚本：检测到新 build 的临时目录后自动 hardlink 镜像进去
+while true; do
+  d=$(ls -td /tmp/local_cache/*/ 2>/dev/null | head -1)
+  if [ -n "$d" ] && [ ! -f "$d/sonic-vs.img.gz" ]; then
+    ln /root/img_cache/sonic-vs_daily.img.gz "$d/sonic-vs.img.gz"
+    echo "[$(date)] LINKED into $d"
+    ls -la "$d/sonic-vs.img.gz"
+    break
+  fi
+  sleep 1
+done
+```
+
+#### Step 3：触发 Jenkins build
+
+- 在 Jenkins 参数页面，把 `vsonic_image` 改为 `skip`
+- 其他参数不变，正常触发
+
+#### Step 4：验证
+
+监听循环输出 `LINKED into ...` 即表示注入成功，setup 阶段会在几分钟内完成（对比正常下载需要 50+ 分钟）。
+
+### 13.5 恢复正常模式
+
+当镜像服务器带宽恢复后，Jenkins build 触发时不填 `skip`，保持默认 URL 即可。无需清理 `/root/img_cache/`。
+
+### 13.6 注意事项
+
+| 项目 | 说明 |
+|------|------|
+| hardlink 时机 | 必须在 `download_sonic_vs_img()` 的 `time.sleep(120)` 结束前完成，窗口充裕 |
+| 镜像更新 | skip 模式使用的是预下载的镜像，非实时最新；需测最新 daily 时重新下载或改回 URL |
+| 磁盘占用 | hardlink 不额外占空间，build 结束后 `/tmp/local_cache/` 会被脚本自动清理 |
+| 适用范围 | 仅当镜像下载速度不足以在 40min timeout 内完成时使用 |
