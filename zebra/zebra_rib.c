@@ -539,8 +539,13 @@ done:
 		 *
 		 * Note: If nhe_received points to a different NHG
 		 * (the true original received NHG), it is left untouched.
+		 *
+		 * In nhg-fib mode, nhe_received must be preserved as the
+		 * original unresolved NHE for FPM. Skip the update since
+		 * resolution will change re->nhe but nhe_received should
+		 * remain pointing to the protocol-original NHE.
 		 */
-		if (re->nhe_received == old_nhg) {
+		if (!zebra_nhg_fib_enabled && re->nhe_received == old_nhg) {
 			zebra_nhg_decrement_ref(old_nhg);
 			if (new_nhghe)
 				zebra_nhg_increment_ref(new_nhghe);
