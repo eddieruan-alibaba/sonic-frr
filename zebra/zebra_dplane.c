@@ -464,6 +464,18 @@ struct dplane_vlan_info {
 };
 
 /*
+ * NHT event info carried across the dplane boundary so fpmsyncd can
+ * perform a fast RIB fixup when an RNH's resolved state changes.
+ */
+struct dplane_nht_info {
+	struct prefix rnh_prefix;
+	struct prefix prev_resolved_prefix;
+	uint32_t      prev_resolved_nhg_id;
+	struct prefix curr_resolved_prefix;
+	uint32_t      curr_resolved_nhg_id;
+};
+
+/*
  * The context block used to exchange info about route updates across
  * the boundary between the zebra main context (and pthread) and the
  * dataplane layer (and pthread).
@@ -532,6 +544,7 @@ struct zebra_dplane_ctx {
 		struct dplane_macfdb_read_info macfdb_read;
 		struct dplane_neigh_read_info neigh_read;
 		struct dplane_tc_qdisc_notify_info tc_qdisc_notify;
+		struct dplane_nht_info nht;
 	} u;
 
 	/* Namespace info, used especially for netlink kernel communication */
@@ -962,6 +975,7 @@ static void dplane_ctx_free_internal(struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_NONE:
 	case DPLANE_OP_IPSET_ADD:
 	case DPLANE_OP_IPSET_DELETE:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		break;
 	case DPLANE_OP_INTF_INSTALL:
 	case DPLANE_OP_INTF_UPDATE:
@@ -1191,6 +1205,8 @@ const char *dplane_op2str(enum dplane_op_e op)
 		return "NH_UPDATE";
 	case DPLANE_OP_NH_DELETE:
 		return "NH_DELETE";
+	case DPLANE_OP_NHT_EVENT_UPDATE:
+		return "NHT_EVENT_UPDATE";
 
 	case DPLANE_OP_LSP_INSTALL:
 		return "LSP_INSTALL";
@@ -2589,6 +2605,38 @@ uint32_t dplane_ctx_get_nhe_dependents_count(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
 	return ctx->u.rinfo.nhe.dependents_count;
+}
+
+/* Accessors for NHT event info */
+
+const struct prefix *dplane_ctx_get_nht_rnh_prefix(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.nht.rnh_prefix;
+}
+
+const struct prefix *dplane_ctx_get_nht_prev_resolved_prefix(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.nht.prev_resolved_prefix;
+}
+
+uint32_t dplane_ctx_get_nht_prev_resolved_nhg_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.nht.prev_resolved_nhg_id;
+}
+
+const struct prefix *dplane_ctx_get_nht_curr_resolved_prefix(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return &ctx->u.nht.curr_resolved_prefix;
+}
+
+uint32_t dplane_ctx_get_nht_curr_resolved_nhg_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.nht.curr_resolved_nhg_id;
 }
 
 /* Accessors for LSP information */
@@ -5459,6 +5507,60 @@ enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe)
 }
 
 /*
+ * Enqueue an NHT event update for the dataplane. Used when an RNH's
+ * resolved state has truly changed so fpmsyncd can perform a fast RIB fixup.
+ */
+enum zebra_dplane_result dplane_nht_event_update(
+	const struct rnh *rnh,
+	const struct prefix *prev_resolved_prefix,
+	uint32_t prev_resolved_nhg_id)
+{
+	struct zebra_dplane_ctx *ctx;
+	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
+
+	if (rnh == NULL || rnh->node == NULL) {
+		return ret;
+	}
+
+	ctx = dplane_ctx_alloc();
+	if (!ctx) {
+		return ret;
+	}
+
+	ctx->zd_op = DPLANE_OP_NHT_EVENT_UPDATE;
+	ctx->zd_status = ZEBRA_DPLANE_REQUEST_SUCCESS;
+
+	/* rnh_prefix: nexthop prefix tracked by this RNH */
+	prefix_copy(&ctx->u.nht.rnh_prefix, &rnh->node->p);
+
+	/* prev: cached by caller before copy_state() */
+	if (prev_resolved_prefix) {
+		prefix_copy(&ctx->u.nht.prev_resolved_prefix,
+			    prev_resolved_prefix);
+	} else {
+		memset(&ctx->u.nht.prev_resolved_prefix, 0,
+		       sizeof(struct prefix));
+	}
+	ctx->u.nht.prev_resolved_nhg_id = prev_resolved_nhg_id;
+
+	/* curr: read from rnh's current state (post copy_state) */
+	prefix_copy(&ctx->u.nht.curr_resolved_prefix, &rnh->resolved_route);
+	ctx->u.nht.curr_resolved_nhg_id = (rnh->state && rnh->state->nhe)
+						? rnh->state->nhe->id : 0;
+
+	zlog_info("NHT_EVENT_UPDATE: rnh=%pFX prev_prefix=%pFX prev_nhg=%u curr_prefix=%pFX curr_nhg=%u",
+		  &ctx->u.nht.rnh_prefix,
+		  &ctx->u.nht.prev_resolved_prefix,
+		  ctx->u.nht.prev_resolved_nhg_id,
+		  &ctx->u.nht.curr_resolved_prefix,
+		  ctx->u.nht.curr_resolved_nhg_id);
+
+	dplane_provider_enqueue_to_zebra(ctx);
+	ret = ZEBRA_DPLANE_REQUEST_QUEUED;
+	return ret;
+}
+
+/*
  * Enqueue LSP add for the dataplane.
  */
 enum zebra_dplane_result dplane_lsp_add(struct zebra_lsp *lsp)
@@ -7546,6 +7648,7 @@ static void kernel_dplane_log_detail(struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_BR_PORT_UPDATE:
 
 	case DPLANE_OP_NONE:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		break;
 
 	case DPLANE_OP_IPTABLE_ADD:
@@ -7830,6 +7933,7 @@ static void kernel_dplane_handle_result(struct zebra_dplane_ctx *ctx)
 	case DPLANE_OP_ROUTE_NOTIFY:
 	case DPLANE_OP_LSP_NOTIFY:
 	case DPLANE_OP_BR_PORT_UPDATE:
+	case DPLANE_OP_NHT_EVENT_UPDATE:
 		break;
 
 	/* TODO -- error counters for incoming events? */
