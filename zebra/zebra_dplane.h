@@ -1014,6 +1014,15 @@ enum zebra_dplane_result dplane_nht_event_update(
 	uint32_t prev_resolved_nhg_id);
 
 /*
+ * Enqueue an NHT event update for a directly-connected nexthop whose egress
+ * interface has gone down. Directly-connected nexthops carry no RNH, so this
+ * variant builds the event from the nexthop's gate and the singleton NHG id.
+ */
+enum zebra_dplane_result dplane_nht_event_update_connected(
+	const struct nexthop *nh,
+	uint32_t prev_resolved_nhg_id);
+
+/*
  * Enqueue LSP change operations for the dataplane.
  */
 enum zebra_dplane_result dplane_lsp_add(struct zebra_lsp *lsp);
