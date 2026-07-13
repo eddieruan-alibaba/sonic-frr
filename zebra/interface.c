@@ -182,11 +182,20 @@ static int if_zebra_new_hook(struct interface *ifp)
 static void if_down_nhg_dependents(const struct interface *ifp)
 {
 	struct nhg_connected *rb_node_dep = NULL;
+	struct nhg_connected *rb_node_composite = NULL;
 	struct zebra_if *zif = (struct zebra_if *)ifp->info;
 
 	frr_each (nhg_connected_tree, &zif->nhg_dependents, rb_node_dep) {
 		frrtrace(2, frr_zebra, if_down_nhg_dependents, ifp, rb_node_dep->nhe);
 		zebra_nhg_check_valid(rb_node_dep->nhe);
+
+		/* After marking this singleton invalid, flag all composite
+		 * NHGs that depend on it (and their dependents closure) for
+		 * FPM-only reinstall so the pruned member set is re-sent.
+		 */
+		frr_each (nhg_connected_tree,
+			  &rb_node_dep->nhe->nhg_dependents, rb_node_composite)
+			zebra_nhg_flag_reinstall_fpm(rb_node_composite->nhe);
 	}
 }
 

@@ -1006,12 +1006,15 @@ enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe);
 
 /*
  * Enqueue an NHT event update - emitted when an RNH's resolved state changes
- * so fpmsyncd can perform a fast RIB fixup.
+ * so fpmsyncd can perform a fast RIB fixup. Takes independent fields so the
+ * dplane layer does not depend on struct rnh internals.
  */
 enum zebra_dplane_result dplane_nht_event_update(
-	const struct rnh *rnh,
+	const struct prefix *rnh_prefix,
 	const struct prefix *prev_resolved_prefix,
-	uint32_t prev_resolved_nhg_id);
+	uint32_t prev_resolved_nhg_id,
+	const struct prefix *curr_resolved_prefix,
+	uint32_t curr_resolved_nhg_id);
 
 /*
  * Enqueue LSP change operations for the dataplane.

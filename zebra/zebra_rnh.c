@@ -851,8 +851,13 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		 * can perform fast fixup.
 		 */
 		if (state_changed && !route_entry_queued) {
-			dplane_nht_event_update(rnh, &prev_resolved_route,
-						prev_resolved_nhg_id);
+			dplane_nht_event_update(
+				&rnh->node->p,
+				&prev_resolved_route,
+				prev_resolved_nhg_id,
+				&rnh->resolved_route,
+				(rnh->state && rnh->state->nhe)
+					? rnh->state->nhe->id : 0);
 		}
 
 		/* Process pseudowires attached to this nexthop */

@@ -1104,7 +1104,7 @@ static struct nhg_ctx *nhg_ctx_init(uint32_t id, struct nexthop *nh, struct nh_g
  * The REINSTALL_FPM_ONLY flag doubles as a visited-guard so the dependents DAG
  * is walked only once per node.
  */
-static void zebra_nhg_flag_reinstall_fpm(struct nhg_hash_entry *nhe)
+void zebra_nhg_flag_reinstall_fpm(struct nhg_hash_entry *nhe)
 {
 	struct nhg_connected *rb_node_dep = NULL;
 
@@ -1170,16 +1170,6 @@ static void zebra_nhg_set_valid(struct nhg_hash_entry *nhe, bool valid)
 				nexthop = nexthop->next;
 			}
 		}
-
-		/*
-		 * The dependent (composite) NHG remains valid because it still
-		 * has at least one active member, but one of its members just
-		 * became inactive. In nhg-fib mode flag it -- and every group
-		 * stacked on top of it -- for an FPM-only reinstall so their
-		 * flattened member lists drop the now-inactive nexthop.
-		 */
-		if (!valid && dependent_valid)
-			zebra_nhg_flag_reinstall_fpm(rb_node_dep->nhe);
 
 		zebra_nhg_set_valid(rb_node_dep->nhe, dependent_valid);
 	}

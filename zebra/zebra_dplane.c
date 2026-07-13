@@ -5511,42 +5511,49 @@ enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe)
  * resolved state has truly changed so fpmsyncd can perform a fast RIB fixup.
  */
 enum zebra_dplane_result dplane_nht_event_update(
-	const struct rnh *rnh,
+	const struct prefix *rnh_prefix,
 	const struct prefix *prev_resolved_prefix,
-	uint32_t prev_resolved_nhg_id)
+	uint32_t prev_resolved_nhg_id,
+	const struct prefix *curr_resolved_prefix,
+	uint32_t curr_resolved_nhg_id)
 {
 	struct zebra_dplane_ctx *ctx;
-	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
+	enum zebra_dplane_result result = ZEBRA_DPLANE_REQUEST_FAILURE;
+	int ret;
 
-	if (rnh == NULL || rnh->node == NULL) {
-		return ret;
-	}
+	if (rnh_prefix == NULL)
+		return result;
 
 	ctx = dplane_ctx_alloc();
-	if (!ctx) {
-		return ret;
-	}
+	if (!ctx)
+		return result;
 
 	ctx->zd_op = DPLANE_OP_NHT_EVENT_UPDATE;
 	ctx->zd_status = ZEBRA_DPLANE_REQUEST_SUCCESS;
 
-	/* rnh_prefix: nexthop prefix tracked by this RNH */
-	prefix_copy(&ctx->u.nht.rnh_prefix, &rnh->node->p);
+	/* NHT events are informational for the FPM; they never go to kernel. */
+	dplane_ctx_set_skip_kernel(ctx);
 
-	/* prev: cached by caller before copy_state() */
-	if (prev_resolved_prefix) {
+	/* rnh_prefix: the tracked nexthop prefix */
+	prefix_copy(&ctx->u.nht.rnh_prefix, rnh_prefix);
+
+	/* prev: state before the change */
+	if (prev_resolved_prefix)
 		prefix_copy(&ctx->u.nht.prev_resolved_prefix,
 			    prev_resolved_prefix);
-	} else {
+	else
 		memset(&ctx->u.nht.prev_resolved_prefix, 0,
 		       sizeof(struct prefix));
-	}
 	ctx->u.nht.prev_resolved_nhg_id = prev_resolved_nhg_id;
 
-	/* curr: read from rnh's current state (post copy_state) */
-	prefix_copy(&ctx->u.nht.curr_resolved_prefix, &rnh->resolved_route);
-	ctx->u.nht.curr_resolved_nhg_id = (rnh->state && rnh->state->nhe)
-						? rnh->state->nhe->id : 0;
+	/* curr: state after the change */
+	if (curr_resolved_prefix)
+		prefix_copy(&ctx->u.nht.curr_resolved_prefix,
+			    curr_resolved_prefix);
+	else
+		memset(&ctx->u.nht.curr_resolved_prefix, 0,
+		       sizeof(struct prefix));
+	ctx->u.nht.curr_resolved_nhg_id = curr_resolved_nhg_id;
 
 	zlog_info("NHT_EVENT_UPDATE: rnh=%pFX prev_prefix=%pFX prev_nhg=%u curr_prefix=%pFX curr_nhg=%u",
 		  &ctx->u.nht.rnh_prefix,
@@ -5555,9 +5562,16 @@ enum zebra_dplane_result dplane_nht_event_update(
 		  &ctx->u.nht.curr_resolved_prefix,
 		  ctx->u.nht.curr_resolved_nhg_id);
 
-	dplane_provider_enqueue_to_zebra(ctx);
-	ret = ZEBRA_DPLANE_REQUEST_QUEUED;
-	return ret;
+	ret = dplane_update_enqueue(ctx);
+
+	if (ret == AOK)
+		result = ZEBRA_DPLANE_REQUEST_QUEUED;
+	else {
+		if (ctx)
+			dplane_ctx_free(&ctx);
+	}
+
+	return result;
 }
 
 /*
