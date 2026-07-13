@@ -5561,68 +5561,6 @@ enum zebra_dplane_result dplane_nht_event_update(
 }
 
 /*
- * Enqueue an NHT event update for a directly-connected nexthop whose egress
- * interface has just gone down. Such nexthops carry no RNH, so this builds the
- * event from the nexthop gate and the singleton NHG id. The nexthop is now
- * unreachable, so curr_resolved_nhg_id is 0 (passes fpmsyncd's Phase 1 gate).
- */
-enum zebra_dplane_result dplane_nht_event_update_connected(
-	const struct nexthop *nh,
-	uint32_t prev_resolved_nhg_id)
-{
-	struct zebra_dplane_ctx *ctx;
-	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
-
-	if (nh == NULL || !zebra_nhg_fib_enabled) {
-		return ret;
-	}
-
-	ctx = dplane_ctx_alloc();
-	if (!ctx) {
-		return ret;
-	}
-
-	ctx->zd_op = DPLANE_OP_NHT_EVENT_UPDATE;
-	ctx->zd_status = ZEBRA_DPLANE_REQUEST_SUCCESS;
-
-	/* rnh_prefix: host prefix of the connected nexthop's gate. This is the
-	 * bare address fpmsyncd strips and uses as its backwalk lookup key.
-	 */
-	memset(&ctx->u.nht.rnh_prefix, 0, sizeof(struct prefix));
-	if (nh->type == NEXTHOP_TYPE_IPV4
-	    || nh->type == NEXTHOP_TYPE_IPV4_IFINDEX) {
-		ctx->u.nht.rnh_prefix.family = AF_INET;
-		ctx->u.nht.rnh_prefix.prefixlen = IPV4_MAX_BITLEN;
-		ctx->u.nht.rnh_prefix.u.prefix4 = nh->gate.ipv4;
-	} else if (nh->type == NEXTHOP_TYPE_IPV6
-		   || nh->type == NEXTHOP_TYPE_IPV6_IFINDEX) {
-		ctx->u.nht.rnh_prefix.family = AF_INET6;
-		ctx->u.nht.rnh_prefix.prefixlen = IPV6_MAX_BITLEN;
-		ctx->u.nht.rnh_prefix.u.prefix6 = nh->gate.ipv6;
-	} else {
-		/* Not an addressed nexthop; nothing to track. */
-		dplane_ctx_free(&ctx);
-		return ret;
-	}
-
-	/* prev: the connected singleton NHG is the backwalk start point. */
-	memset(&ctx->u.nht.prev_resolved_prefix, 0, sizeof(struct prefix));
-	ctx->u.nht.prev_resolved_nhg_id = prev_resolved_nhg_id;
-
-	/* curr: nexthop is now unreachable. */
-	memset(&ctx->u.nht.curr_resolved_prefix, 0, sizeof(struct prefix));
-	ctx->u.nht.curr_resolved_nhg_id = 0;
-
-	zlog_info("NHT_EVENT_UPDATE (connected): rnh=%pFX prev_nhg=%u curr_nhg=0",
-		  &ctx->u.nht.rnh_prefix,
-		  ctx->u.nht.prev_resolved_nhg_id);
-
-	dplane_provider_enqueue_to_zebra(ctx);
-	ret = ZEBRA_DPLANE_REQUEST_QUEUED;
-	return ret;
-}
-
-/*
  * Enqueue LSP add for the dataplane.
  */
 enum zebra_dplane_result dplane_lsp_add(struct zebra_lsp *lsp)
