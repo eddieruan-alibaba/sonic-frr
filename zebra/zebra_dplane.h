@@ -677,12 +677,12 @@ uint32_t dplane_ctx_get_nhe_depends_count(const struct zebra_dplane_ctx *ctx);
 const uint32_t *dplane_ctx_get_nhe_dependents(const struct zebra_dplane_ctx *ctx);
 uint32_t dplane_ctx_get_nhe_dependents_count(const struct zebra_dplane_ctx *ctx);
 
-/* Accessors for NHT event info */
-const struct prefix *dplane_ctx_get_nht_rnh_prefix(const struct zebra_dplane_ctx *ctx);
-const struct prefix *dplane_ctx_get_nht_prev_resolved_prefix(const struct zebra_dplane_ctx *ctx);
-uint32_t             dplane_ctx_get_nht_prev_resolved_nhg_id(const struct zebra_dplane_ctx *ctx);
-const struct prefix *dplane_ctx_get_nht_curr_resolved_prefix(const struct zebra_dplane_ctx *ctx);
-uint32_t             dplane_ctx_get_nht_curr_resolved_nhg_id(const struct zebra_dplane_ctx *ctx);
+/* NHT event context accessors */
+const struct prefix *dplane_ctx_get_rnh_prefix(const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_rnh_prev_resolved_prefix(const struct zebra_dplane_ctx *ctx);
+uint32_t             dplane_ctx_get_rnh_prev_resolved_nhg_id(const struct zebra_dplane_ctx *ctx);
+const struct prefix *dplane_ctx_get_rnh_curr_resolved_prefix(const struct zebra_dplane_ctx *ctx);
+uint32_t             dplane_ctx_get_rnh_curr_resolved_nhg_id(const struct zebra_dplane_ctx *ctx);
 
 /* Accessors for LSP information */
 
@@ -1012,9 +1012,9 @@ enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nht_event_update(
 	const struct prefix *rnh_prefix,
 	const struct prefix *prev_resolved_prefix,
-	uint32_t prev_resolved_nhg_id,
+	uint32_t prev_nhg_id,
 	const struct prefix *curr_resolved_prefix,
-	uint32_t curr_resolved_nhg_id);
+	uint32_t curr_nhg_id);
 
 /*
  * Enqueue LSP change operations for the dataplane.

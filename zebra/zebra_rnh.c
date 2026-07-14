@@ -801,8 +801,7 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 {
 	int state_changed = 0;
 	struct prefix prev_resolved_route = rnh->resolved_route;
-	uint32_t prev_resolved_nhg_id = (rnh->state && rnh->state->nhe)
-						? rnh->state->nhe->id : 0;
+	uint32_t prev_resolved_nhg_id = rnh->resolved_nhg_id;
 
 	/* If we're resolving over a different route, resolution has changed or
 	 * the resolving route has some change (e.g., metric), there is a state
@@ -852,12 +851,11 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		 */
 		if (state_changed && !route_entry_queued) {
 			dplane_nht_event_update(
-				&rnh->node->p,
+				&nrn->p,
 				&prev_resolved_route,
 				prev_resolved_nhg_id,
 				&rnh->resolved_route,
-				(rnh->state && rnh->state->nhe)
-					? rnh->state->nhe->id : 0);
+				rnh->resolved_nhg_id);
 		}
 
 		/* Process pseudowires attached to this nexthop */
@@ -1057,6 +1055,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 		free_state(rnh->vrf_id, rnh->state, rn);
 		rnh->state = NULL;
 	}
+	rnh->resolved_nhg_id = 0;
 
 	if (!re)
 		return;
@@ -1069,6 +1068,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 	state->status = re->status;
 
 	state->nhe = zebra_nhe_copy(re->nhe, 0);
+	rnh->resolved_nhg_id = re->nhe->id;
 
 	rnh->state = state;
 }
