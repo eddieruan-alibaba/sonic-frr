@@ -830,6 +830,16 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	}
 	zebra_rnh_store_in_routing_table(rnh);
 
+	zlog_info("PIC_EVAL: %pFX prn=%pRN re=%p sc=%d force=%d rq=%d snr=%d",
+		  &nrn->p,
+		  prn,
+		  re,
+		  state_changed,
+		  force,
+		  route_entry_queued,
+		  re ? !!CHECK_FLAG(re->status,
+				    ROUTE_ENTRY_SEND_NHT_REMOVAL) : 0);
+
 	if (state_changed || force ||
 	    (re && CHECK_FLAG(re->status, ROUTE_ENTRY_SEND_NHT_REMOVAL))) {
 		if (re && CHECK_FLAG(re->status, ROUTE_ENTRY_SEND_NHT_REMOVAL)) {
