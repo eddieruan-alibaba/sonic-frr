@@ -855,11 +855,10 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		zebra_rnh_notify_protocol_clients(zvrf, afi, nrn, rnh, prn,
 						  rnh->state);
 
-		/* PIC Phase 1: if state truly changed and no candidate RE was
-		 * blocked by QUEUED, emit an NHT event to dplane so fpmsyncd
-		 * can perform fast fixup.
+		/* PIC Phase 1: if state truly changed, emit an NHT event to
+		 * dplane so fpmsyncd can perform fast fixup.
 		 */
-		if (state_changed && !route_entry_queued) {
+		if (state_changed) {
 			dplane_nht_event_update(
 				&nrn->p,
 				&prev_resolved_route,
