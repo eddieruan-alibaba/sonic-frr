@@ -1094,6 +1094,36 @@ static struct nhg_ctx *nhg_ctx_init(uint32_t id, struct nexthop *nh, struct nh_g
 	return ctx;
 }
 
+/*
+ * Flag an already-installed NHG (and every group stacked on top of it) for an
+ * FPM-only reinstall. Used on the interface-down path: when a member nexthop
+ * of a composite becomes inactive but the composite stays valid, the composite
+ * and all of its dependents must be re-sent to the FPM so their flattened
+ * member lists drop the now-inactive nexthop. The reinstall skips kernel
+ * programming because the kernel already reflects the interface going down.
+ * The REINSTALL_FPM_ONLY flag doubles as a visited-guard so the dependents DAG
+ * is walked only once per node.
+ */
+void zebra_nhg_flag_reinstall_fpm(struct nhg_hash_entry *nhe)
+{
+	struct nhg_connected *rb_node_dep = NULL;
+
+	if (!zebra_nhg_fib_enabled)
+		return;
+
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) &&
+	    !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED_FPM_ONLY))
+		return;
+
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY))
+		return;
+
+	SET_FLAG(nhe->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+
+	frr_each (nhg_connected_tree, &nhe->nhg_dependents, rb_node_dep)
+		zebra_nhg_flag_reinstall_fpm(rb_node_dep->nhe);
+}
+
 static void zebra_nhg_set_valid(struct nhg_hash_entry *nhe, bool valid)
 {
 	struct nhg_connected *rb_node_dep;
@@ -1140,6 +1170,7 @@ static void zebra_nhg_set_valid(struct nhg_hash_entry *nhe, bool valid)
 				nexthop = nexthop->next;
 			}
 		}
+
 		zebra_nhg_set_valid(rb_node_dep->nhe, dependent_valid);
 	}
 }

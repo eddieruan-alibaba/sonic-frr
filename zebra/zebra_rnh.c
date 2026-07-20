@@ -31,6 +31,7 @@
 #include "zebra/redistribute.h"
 #include "zebra/debug.h"
 #include "zebra/zebra_rnh.h"
+#include "zebra/zebra_dplane.h"
 #include "zebra/zebra_routemap.h"
 #include "zebra/zebra_srte.h"
 #include "zebra/interface.h"
@@ -790,6 +791,8 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 					 struct route_entry *re)
 {
 	int state_changed = 0;
+	struct prefix prev_resolved_route = rnh->resolved_route;
+	uint32_t prev_resolved_nhg_id = rnh->resolved_nhg_id;
 
 	/* If we're resolving over a different route, resolution has changed or
 	 * the resolving route has some change (e.g., metric), there is a state
@@ -832,6 +835,30 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		/* Notify registered protocol clients. */
 		zebra_rnh_notify_protocol_clients(zvrf, afi, nrn, rnh, prn,
 						  rnh->state);
+
+		/* PIC Phase 1: if state truly changed, emit an NHT event to
+		 * dplane so fpmsyncd can perform fast fixup.
+		 */
+		if (state_changed) {
+			enum zebra_dplane_result dplane_res;
+
+			if (IS_ZEBRA_DEBUG_NHT)
+				zlog_debug(
+					"NHT event: rnh=%pFX prev_nhg=%u curr_nhg=%u",
+					&nrn->p, prev_resolved_nhg_id,
+					rnh->resolved_nhg_id);
+
+			dplane_res = dplane_nht_event_update(
+				&nrn->p,
+				&prev_resolved_route,
+				prev_resolved_nhg_id,
+				&rnh->resolved_route,
+				rnh->resolved_nhg_id);
+			if (dplane_res != ZEBRA_DPLANE_REQUEST_QUEUED)
+				zlog_warn(
+					"NHT event enqueue failed for rnh=%pFX: result=%d",
+					&nrn->p, dplane_res);
+		}
 
 		/* Process pseudowires attached to this nexthop */
 		zebra_rnh_process_pseudowires(zvrf->vrf->vrf_id, rnh);
@@ -1026,6 +1053,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 		free_state(rnh->vrf_id, rnh->state, rn);
 		rnh->state = NULL;
 	}
+	rnh->resolved_nhg_id = 0;
 
 	if (!re)
 		return;
@@ -1038,6 +1066,7 @@ static void copy_state(struct rnh *rnh, const struct route_entry *re,
 	state->status = re->status;
 
 	state->nhe = zebra_nhe_copy(re->nhe, 0);
+	rnh->resolved_nhg_id = re->nhe->id;
 
 	rnh->state = state;
 }

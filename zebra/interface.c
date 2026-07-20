@@ -182,11 +182,35 @@ static int if_zebra_new_hook(struct interface *ifp)
 static void if_down_nhg_dependents(const struct interface *ifp)
 {
 	struct nhg_connected *rb_node_dep = NULL;
+	struct nhg_connected *rb_node_composite = NULL;
 	struct zebra_if *zif = (struct zebra_if *)ifp->info;
 
+	/* Phase 1: mark each affected singleton invalid and flag the whole
+	 * upward composite closure for FPM-only reinstall. Flagging the entire
+	 * closure must finish before any install is driven, because
+	 * REINSTALL_FPM_ONLY doubles as the visited-guard and is cleared once a
+	 * node is handed to the dplane.
+	 */
 	frr_each (nhg_connected_tree, &zif->nhg_dependents, rb_node_dep) {
 		frrtrace(2, frr_zebra, if_down_nhg_dependents, ifp, rb_node_dep->nhe);
 		zebra_nhg_check_valid(rb_node_dep->nhe);
+
+		frr_each (nhg_connected_tree,
+			  &rb_node_dep->nhe->nhg_dependents, rb_node_composite)
+			zebra_nhg_flag_reinstall_fpm(rb_node_composite->nhe);
+	}
+
+	/* Phase 2: drive the FPM-only reinstall of the directly-affected
+	 * composite NHGs. Their install completion propagates upward via
+	 * zebra_nhg_handle_install(), re-sending the flagged dependents closure
+	 * (each still carrying REINSTALL_FPM_ONLY, so the dplane skips the
+	 * kernel). This mirrors the up path.
+	 */
+	frr_each (nhg_connected_tree, &zif->nhg_dependents, rb_node_dep) {
+		frr_each (nhg_connected_tree,
+			  &rb_node_dep->nhe->nhg_dependents, rb_node_composite)
+			zebra_nhg_install_kernel(rb_node_composite->nhe,
+						 ZEBRA_ROUTE_MAX);
 	}
 }
 

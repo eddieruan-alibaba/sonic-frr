@@ -419,6 +419,7 @@ extern void zebra_nhg_increment_ref(struct nhg_hash_entry *nhe);
 
 /* Check validity of nhe, if invalid will update dependents as well */
 extern void zebra_nhg_check_valid(struct nhg_hash_entry *nhe);
+extern void zebra_nhg_flag_reinstall_fpm(struct nhg_hash_entry *nhe);
 
 /* Convert nhe depends to a grp context that can be passed around safely */
 extern uint16_t zebra_nhg_nhe2grp(struct nh_grp *grp, struct nhg_hash_entry *nhe, int size);
