@@ -5555,12 +5555,13 @@ enum zebra_dplane_result dplane_nht_event_update(
 		       sizeof(struct prefix));
 	ctx->u.rnh_info.current_resolved_nhg_id = curr_nhg_id;
 
-	zlog_info("NHT_EVENT_UPDATE: rnh=%pFX prev_prefix=%pFX prev_nhg=%u curr_prefix=%pFX curr_nhg=%u",
-		  &ctx->u.rnh_info.p,
-		  &ctx->u.rnh_info.previous_resolved_prefix,
-		  ctx->u.rnh_info.previous_resolved_nhg_id,
-		  &ctx->u.rnh_info.current_resolved_prefix,
-		  ctx->u.rnh_info.current_resolved_nhg_id);
+	if (IS_ZEBRA_DEBUG_DPLANE_DETAIL)
+		zlog_debug("NHT_EVENT_UPDATE: rnh=%pFX prev_prefix=%pFX prev_nhg=%u curr_prefix=%pFX curr_nhg=%u",
+			   &ctx->u.rnh_info.p,
+			   &ctx->u.rnh_info.previous_resolved_prefix,
+			   ctx->u.rnh_info.previous_resolved_nhg_id,
+			   &ctx->u.rnh_info.current_resolved_prefix,
+			   ctx->u.rnh_info.current_resolved_nhg_id);
 
 	ret = dplane_update_enqueue(ctx);
 

@@ -818,6 +818,9 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	} else if (compare_state(re, rnh->state)) {
 		copy_state(rnh, re, nrn);
 		state_changed = 1;
+	} else if (re && re->nhe && rnh->resolved_nhg_id != re->nhe->id) {
+		rnh->resolved_nhg_id = re->nhe->id;
+		state_changed = 1;
 	}
 	zebra_rnh_store_in_routing_table(rnh);
 
@@ -836,24 +839,35 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		zebra_rnh_notify_protocol_clients(zvrf, afi, nrn, rnh, prn,
 						  rnh->state);
 
-		/* PIC Phase 1: if state truly changed, emit an NHT event to
-		 * dplane so fpmsyncd can perform fast fixup.
+		/* PIC Phase 1: emit an NHT event to dplane so fpmsyncd can
+		 * perform fast fixup.
 		 */
-		if (state_changed) {
+		if (state_changed ||
+		    (re && CHECK_FLAG(re->status, ROUTE_ENTRY_SEND_NHT_REMOVAL))) {
+			struct prefix curr_resolved;
+			uint32_t curr_nhg_id;
 			enum zebra_dplane_result dplane_res;
+
+			if (state_changed) {
+				prefix_copy(&curr_resolved, &rnh->resolved_route);
+				curr_nhg_id = rnh->resolved_nhg_id;
+			} else {
+				memset(&curr_resolved, 0, sizeof(struct prefix));
+				curr_nhg_id = 0;
+			}
 
 			if (IS_ZEBRA_DEBUG_NHT)
 				zlog_debug(
 					"NHT event: rnh=%pFX prev_nhg=%u curr_nhg=%u",
 					&nrn->p, prev_resolved_nhg_id,
-					rnh->resolved_nhg_id);
+					curr_nhg_id);
 
 			dplane_res = dplane_nht_event_update(
 				&nrn->p,
 				&prev_resolved_route,
 				prev_resolved_nhg_id,
-				&rnh->resolved_route,
-				rnh->resolved_nhg_id);
+				&curr_resolved,
+				curr_nhg_id);
 			if (dplane_res != ZEBRA_DPLANE_REQUEST_QUEUED)
 				zlog_warn(
 					"NHT event enqueue failed for rnh=%pFX: result=%d",
