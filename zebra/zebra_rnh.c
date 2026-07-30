@@ -818,9 +818,6 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 	} else if (compare_state(re, rnh->state)) {
 		copy_state(rnh, re, nrn);
 		state_changed = 1;
-	} else if (re && re->nhe && rnh->resolved_nhg_id != re->nhe->id) {
-		rnh->resolved_nhg_id = re->nhe->id;
-		state_changed = 1;
 	}
 	zebra_rnh_store_in_routing_table(rnh);
 
@@ -842,19 +839,13 @@ static void zebra_rnh_eval_nexthop_entry(struct zebra_vrf *zvrf, afi_t afi,
 		/* PIC Phase 1: emit an NHT event to dplane so fpmsyncd can
 		 * perform fast fixup.
 		 */
-		if (state_changed ||
-		    (re && CHECK_FLAG(re->status, ROUTE_ENTRY_SEND_NHT_REMOVAL))) {
+		if (state_changed) {
 			struct prefix curr_resolved;
 			uint32_t curr_nhg_id;
 			enum zebra_dplane_result dplane_res;
 
-			if (state_changed) {
-				prefix_copy(&curr_resolved, &rnh->resolved_route);
-				curr_nhg_id = rnh->resolved_nhg_id;
-			} else {
-				memset(&curr_resolved, 0, sizeof(struct prefix));
-				curr_nhg_id = 0;
-			}
+			prefix_copy(&curr_resolved, &rnh->resolved_route);
+			curr_nhg_id = rnh->resolved_nhg_id;
 
 			if (IS_ZEBRA_DEBUG_NHT)
 				zlog_debug(
